@@ -1,0 +1,27 @@
+# MongoDB data
+mongo-data/
+LibreChat/data-node/
+
+# LibreChat runtime/generated data
+LibreChat/logs/
+LibreChat/meili_data*/
+LibreChat/uploads/
+LibreChat/redis-config/certs/
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+build/
+client/dist/
+
+# Env files
+.env
+*.env
+!.env.example
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+*.code-workspace
