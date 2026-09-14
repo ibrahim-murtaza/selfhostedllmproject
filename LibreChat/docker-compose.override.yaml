@@ -1,6 +1,6 @@
 services:
   api:
     environment:
-      - MONGO_URI=mongodb://host.docker.internal:27017/LibreChat
+      - MONGO_URI=mongodb://clarisync-admin:August141947@host.docker.internal:27017/LibreChat?authSource=admin
     volumes:
       - ./librechat.yaml:/app/librechat.yaml
