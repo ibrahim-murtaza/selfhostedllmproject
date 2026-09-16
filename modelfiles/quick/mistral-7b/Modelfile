@@ -1,0 +1,119 @@
+# Clarisync In-House LLM Platform
+# Quick Assistant, TEST VARIANT v5  |  Base: Mistral 7B
+#
+# v1: baseline. Ticket triage clean 4/4 (later confirmed 8/8 on a bigger sample).
+# Redirect on judgment-call questions failed every run, attempted analysis first.
+#
+# v2: sharpened redirect + named-phrase hedge ban, both at once. Ticket triage held
+# at 8/8 on the full sample, the earlier 50% hedge rate on a 4-run sample was noise,
+# not a real regression. Contract redirect genuinely improved on stopping-before-
+# analyzing in some runs, but not reliably.
+#
+# v3: isolated the two v2 changes, kept the redirect fix, reverted hedging to v1's
+# plain wording. Ticket triage held (7/8). Confirmed the hedge-ban wasn't the
+# variable driving anything either way.
+#
+# What v2 and v3 share, and what neither actually fixed: on a full read of the
+# contract_redirect text (not just the keyword scan), several "clean"-flagged runs
+# in both versions named the redirect assistant and then continued anyway. Two
+# examples: v2 run 3 said "I recommend consulting the Deep assistant" then gave a
+# five-point analysis; v3 run 2 said "I will defer to the Deep assistant" then gave
+# a full paragraph weighing the decision before closing with another redirect
+# mention. Naming the assistant was never the same as actually stopping, and the
+# keyword scanner missed both because neither used a flagged hedge or filler word.
+# One run also invented "the Legal assistant," a category that doesn't exist in our
+# lineup.
+#
+# Separately, email output across all three versions was overwhelmingly non-clean,
+# 1 clean out of 12 total runs, with no change across wording versions. Decided this
+# wasn't actually a defect in the earlier standard's intent: the "no closing filler"
+# rule was written with chat-assistant sign-offs in mind ("I hope this helps"), not
+# vendor-facing correspondence, where some baseline courtesy is contextually
+# expected and its absence reads as curt to an outside party. Scoped a new rule
+# instead of continuing to fight the model on this.
+#
+# v4 changes two things at once, both untested combinations, worth
+# splitting apart later if something regresses and it's unclear which caused it:
+#   1. Redirect instruction rewritten to explicitly ban elaborating after naming the
+#      assistant, no factors, no analysis, no listing what the other assistant
+#      would look at, state it in one sentence and stop.
+#   2. New instruction distinguishing addressed correspondence (emails, customer
+#      and vendor replies) from direct output (triage, translation, notes), with
+#      one line of courtesy allowed for the former and none for the latter, instead
+#      of banning closing filler everywhere without that distinction.
+#
+# v4 test results (larger samples, 15-run pass on proofreading specifically):
+# email 3/4 clean, best of any version. Ticket triage 8/8. Contract redirect zero
+# hedge-word flags across 4 runs, word-count check still caught 2/4 runs
+# elaborating after naming the assistant, a real if less severe version of the
+# v2/v3 problem. Coverage pass (six untested use cases) substantively correct
+# every run, no content failures. Two accepted quirks: occasional email
+# courtesy-undershoot to zero lines, occasional verbose contract redirects.
+#
+# Proofreading specifically was under-sampled in that pass (2 runs) and looked
+# clean. A later 6-run pass found real problems: 5/6 led with a meta-commentary
+# preamble ("the sentence should be," "the correct version is," etc, not caught
+# by the original 4-phrase scanner since wording varies run to run), 1/6 left a
+# real error uncorrected ("We receive" not fixed to "We received"), and one
+# LibreChat-side run appended a fabricated trailing note claiming a missing
+# article that wasn't actually missing. The uncorrected-error and fabricated-note
+# issues are model capability limits, not addressed here. The preamble is a
+# wording gap: the existing "no preamble" instruction is scoped to all output in
+# general and evidently isn't concrete enough to override what looks like
+# Mistral's default framing for corrective-task responses specifically.
+#
+# v5 changes one thing: adds a proofreading/correction-specific instruction
+# naming the exact failure pattern (lead-in framing and trailing commentary)
+# instead of relying on the general no-preamble rule to cover it.
+#
+# v5 test results (full 11-use-case pass, proofreading at 15 runs, everything
+# else at 5): proofreading 15/15 clean on the scanner, the preamble/trailing-note
+# fix held. Manual read found the "We receive" -> "We received" tense miss is
+# consistent, not occasional, 15/15 runs missed it while correctly fixing other
+# errors in the same sentence, likely a genuine 7B comprehension ceiling rather
+# than a wording gap. Five new use cases added (vendor_communication, bug_report,
+# ticket_triage, faq_entry, internal_email), four came back clean on both the
+# scanner and a manual read. Two real problems, neither caught by the scanner:
+#   1. ticket_triage: 4/5 runs fabricated content never asked for. A fake
+#      corrected email address, invented "corrected" invoice placeholders, one
+#      run echoed the instruction text back labeled as a correction. The task
+#      is categorization only; the model kept generating a fictitious resolution
+#      instead. Scanner has no way to catch invented-but-plausible content, this
+#      was only visible on a manual read.
+#   2. scheduling: 3/5 used "I hope this message finds you well" despite it being
+#      explicitly named and banned in v4/v5's SYSTEM already. Naming a phrase
+#      inside a longer sentence about courtesy-line length isn't holding up the
+#      same way isolating a rule into its own explicit statement worked for the
+#      redirect fix (v2) and the proofreading fix (v5). Worth the same treatment.
+#
+# v6 (this file) changes two things:
+#   1. Ticket triage gets its own instruction: output the category only, no
+#      invented corrections, no fabricated details, no echoing the ticket back.
+#   2. The banned generic-opener rule is split into its own standalone sentence
+#      instead of living inside the courtesy-line-length instruction.
+
+FROM mistral:7b
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+
+SYSTEM """
+You are the Quick assistant. You handle short, low-ambiguity tasks: drafting emails, proofreading and editing, scheduling and admin coordination, ticket triage, translating text, meeting notes, drafting customer and vendor replies.
+
+Answer directly. No preamble, no restating the question. Use plain sentences. Only use a list if the answer is genuinely a list.
+
+Before answering, check whether the question requires weighing tradeoffs, financial or legal risk, or multi-step reasoning. If it does, stop immediately. Do not attempt an answer first. Do not list factors, considerations, or analysis for another assistant to look at, and do not explain what that assistant would evaluate. State in one sentence that this needs deeper analysis and name the General or Deep assistant, then stop there.
+
+State uncertainty directly when it exists, do not hedge by default.
+
+If the input is incomplete, missing required details, or too vague to act on, say so directly and state what's missing. Do not fabricate placeholder content, invented details, or example output to fill the gap.
+
+If the output is a message addressed to someone, an email or a reply, ordinary professional courtesy is fine, but keep it to one line, not stacked. For everything else, direct answers, triage, translations, notes, skip pleasantries entirely.
+
+Never open a message with a generic line such as "I hope this message finds you well" or "I hope this email finds you well." This applies regardless of message type.
+
+For proofreading or correction tasks, output only the corrected text itself. Do not introduce it with a lead-in such as "the corrected version is" or "the sentence should read." Do not follow it with commentary, notes, or explanations of what was changed. Just the corrected text, nothing before or after it.
+
+For ticket triage, output the category only. Do not invent a correction, a fixed value, a placeholder, or contact information that wasn't in the ticket. Do not restate or repeat the ticket text back. If the category is genuinely ambiguous, say so in one sentence rather than guessing.
+"""
