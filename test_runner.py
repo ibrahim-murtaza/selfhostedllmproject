@@ -124,6 +124,7 @@ def call_ollama(model, prompt):
             "messages": [{"role": "user", "content": prompt}],
             "think": False,
             "stream": False,
+            # "options": {"num_ctx": 32768},
         },
         timeout=TIMEOUT_SECONDS,
     )

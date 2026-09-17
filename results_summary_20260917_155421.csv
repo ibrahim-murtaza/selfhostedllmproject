@@ -1,0 +1,7 @@
+model,total_calls,errors,minutes
+quick-mistral-7b,115,0,5.7
+quick-qwen3.5-9b,115,0,5.5
+quick-gemma4-12b,115,0,6.6
+quick-ministral3-8b,115,0,6.2
+quick-qwen3-8b,115,0,5.1
+quick-llama3.1-8b,115,0,5.2
