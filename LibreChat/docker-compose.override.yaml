@@ -1,6 +1,10 @@
 services:
   api:
     environment:
-      - MONGO_URI=mongodb://clarisync-admin:August141947@host.docker.internal:27017/LibreChat?authSource=admin
+      - MONGO_URI=mongodb://clarisync-admin:vTIsBYCePjK9fXSnJkUyOhQm@host.docker.internal:27017/LibreChat?authSource=admin
     volumes:
       - ./librechat.yaml:/app/librechat.yaml
+  vectordb:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
