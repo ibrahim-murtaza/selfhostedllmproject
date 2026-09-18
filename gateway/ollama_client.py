@@ -9,14 +9,23 @@ import requests
 
 from model_registry import ModelEntry
 
-OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 TIMEOUT_SECONDS = 180
 
+class OllamaUnavailableError(Exception):
+    """Raised when Ollama can't be reached or times out -- lets main.py
+    return a clean error instead of a raw 500 with a stack trace."""
+    pass
 
 def get_loaded_models() -> set[str]:
     """Return the set of Ollama model tags currently resident in VRAM."""
-    resp = requests.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=10)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=10)
+        resp.raise_for_status()
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        raise OllamaUnavailableError("Cannot reach Ollama -- is it running?")
+    except requests.exceptions.HTTPError as e:
+        raise OllamaUnavailableError(f"Ollama returned an error: {e}")
     return {m["name"] for m in resp.json().get("models", [])}
 
 
@@ -27,11 +36,14 @@ def unload_model(ollama_tag: str) -> None:
     swap orchestration in main.py before loading a different Quick model --
     see the explicit-unload-vs-auto-evict note in the handoff.
     """
-    requests.post(
-        f"{OLLAMA_BASE_URL}/api/generate",
-        json={"model": ollama_tag, "keep_alive": 0},
-        timeout=30,
-    )
+    try:
+        requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": ollama_tag, "keep_alive": 0},
+            timeout=30,
+        )
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        raise OllamaUnavailableError("Cannot reach Ollama -- is it running?")
 
 
 def call_model(
@@ -67,8 +79,15 @@ def call_model(
         payload["options"] = {"num_ctx": model.max_context}
     # else "modelfile" placement -- num_ctx is already baked in, don't override.
 
-    resp = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=TIMEOUT_SECONDS)
-    resp.raise_for_status()
+    try:
+        resp = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=TIMEOUT_SECONDS)
+        resp.raise_for_status()
+    except requests.exceptions.ConnectionError:
+        raise OllamaUnavailableError("Cannot reach Ollama -- is it running?")
+    except requests.exceptions.Timeout:
+        raise OllamaUnavailableError(f"Ollama did not respond within {TIMEOUT_SECONDS}s.")
+    except requests.exceptions.HTTPError as e:
+        raise OllamaUnavailableError(f"Ollama returned an error: {e}")
     data = resp.json()
 
     content = data["message"].get("content", "").strip()
@@ -78,4 +97,18 @@ def call_model(
         content = thinking
         recovered = True
 
-    return {"content": content, "recovered_from_thinking": recovered, "raw": data}
+    # Ollama reports its own timing in nanoseconds when stream:false -- more
+    # precise than wrapping the request in our own wall-clock timer, and
+    # load_duration specifically isolates the cost of a cold/swapped-in model.
+    def _ns_to_ms(key: str) -> float:
+        return round(data.get(key, 0) / 1_000_000, 1)
+
+    return {
+        "content": content,
+        "recovered_from_thinking": recovered,
+        "raw": data,
+        "total_duration_ms": _ns_to_ms("total_duration"),
+        "load_duration_ms": _ns_to_ms("load_duration"),
+        "prompt_eval_duration_ms": _ns_to_ms("prompt_eval_duration"),
+        "eval_duration_ms": _ns_to_ms("eval_duration"),
+    }

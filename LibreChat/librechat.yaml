@@ -798,15 +798,15 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
     custom:
-    - name: 'Ollama'
-      apiKey: 'ollama'
-      baseURL: 'http://host.docker.internal:11434/v1'
+    - name: 'Clarisync Gateway'
+      apiKey: 'not-needed'
+      baseURL: 'http://host.docker.internal:8000/v1'
       models:
-        default: ['mistral']
+        default: ['quick-text', 'quick-vision']
         fetch: false
       titleConvo: true
       titleModel: 'current_model'
-      modelDisplayLabel: 'Ollama'
+      modelDisplayLabel: 'Clarisync Gateway'
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables

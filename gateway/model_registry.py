@@ -22,7 +22,7 @@ class ModelEntry:
 
 MODEL_REGISTRY: dict[str, ModelEntry] = {
     "quick-text": ModelEntry(
-        ollama_tag="quick-qwen3-8b",
+        ollama_tag="quick-qwen3-8b:latest",
         tier="quick",
         capability="text",
         max_context=32768,       # locked via A.4 quantization + context validation
@@ -30,7 +30,7 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         default_load=True,
     ),
     "quick-vision": ModelEntry(
-        ollama_tag="quick-ministral3-8b",
+        ollama_tag="quick-ministral3-8b:latest",
         tier="quick",
         capability="vision",
         max_context=8192,        # kept at default -- context-extension test was
