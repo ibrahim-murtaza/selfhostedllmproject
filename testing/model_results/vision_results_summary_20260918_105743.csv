@@ -1,0 +1,4 @@
+model,errors,routed_to_thinking,minutes
+quick-gemma4-12b,0,8,48.6
+quick-qwen3.5-9b,0,4,25.9
+quick-ministral3-8b,0,0,4.5

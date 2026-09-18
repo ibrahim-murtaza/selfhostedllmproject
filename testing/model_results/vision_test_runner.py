@@ -46,8 +46,7 @@ MODELS = [
     "quick-ministral3-8b",
 ]
 
-DEFAULT_REPEATS = 3  # lower than text tests — each image is a fixed input,
-                      # repeats here check consistency, not prompt variety
+DEFAULT_REPEATS = 10
 
 # Fill in real paths once images are sourced. One entry per test image.
 IMAGE_TESTS = [
@@ -81,12 +80,26 @@ IMAGE_TESTS = [
         "prompt": "Transcribe the text visible in this document.",
         "repeats": DEFAULT_REPEATS,
     },
-    {
+        {
         "name": "chart_screenshot",
         "image_path": "images/chart.png",
         "prompt": "Summarize what this chart shows in one or two sentences.",
         "repeats": DEFAULT_REPEATS,
     },
+    # {
+    #     "name": "dense_context_8192",
+    #     "image_path": "images/dense_context_test.png",
+    #     "prompt": "Transcribe every line of text visible in this document, in order.",
+    #     "repeats": 5,
+    #     "num_ctx": 8192,
+    # },
+    # {
+    #     "name": "dense_context_16384",
+    #     "image_path": "images/dense_context_test.png",
+    #     "prompt": "Transcribe every line of text visible in this document, in order.",
+    #     "repeats": 5,
+    #     "num_ctx": 16384,
+    # },
 ]
 
 # ---------------------------------------------------------------------------
@@ -101,23 +114,15 @@ def encode_image(path):
         return base64.b64encode(f.read()).decode("utf-8")
 
 
-def call_ollama_vision(model, prompt, image_b64):
-    resp = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt, "images": [image_b64]}
-            ],
-            # No think:false here, unlike the text runner. Image tasks are
-            # a real capability question, not pure overhead — let each
-            # model reason if it wants to. (Also moot for Qwen3.5: the
-            # toggle has no effect on image calls either way, per Ollama
-            # issue #14716 — content is always empty there regardless.)
-            "stream": False,
-        },
-        timeout=TIMEOUT_SECONDS,
-    )
+def call_ollama_vision(model, prompt, image_b64, num_ctx=None):
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
+        "stream": False,
+    }
+    if num_ctx is not None:
+        payload["options"] = {"num_ctx": num_ctx}
+    resp = requests.post(OLLAMA_URL, json=payload, timeout=TIMEOUT_SECONDS)
     resp.raise_for_status()
     data = resp.json()
     content = data["message"].get("content", "").strip()
@@ -168,7 +173,10 @@ def run():
                 for i in range(test["repeats"]):
                     try:
                         content, recovered = call_ollama_vision(
-                            model, test["prompt"], image_b64
+                            model,
+                            test["prompt"],
+                            image_b64,
+                            num_ctx=test.get("num_ctx"),
                         )
                         status = "ok (recovered from thinking)" if recovered else "ok"
                         if recovered:
@@ -182,7 +190,8 @@ def run():
                     tag = (
                         " *(recovered from thinking field — skim before "
                         "trusting as a clean final answer)*"
-                        if recovered else ""
+                        if recovered
+                        else ""
                     )
                     raw_file.write(f"### Run {i + 1}{tag}\n\n{content}\n\n")
                     print(f"  run {i + 1}: {status}")
@@ -198,8 +207,10 @@ def run():
                 "minutes": round(model_elapsed / 60, 1),
             }
         )
-        print(f"  ({model_elapsed / 60:.1f} min, {error_count} errors, "
-              f"{routed_to_thinking_count} routed-to-thinking)")
+        print(
+            f"  ({model_elapsed / 60:.1f} min, {error_count} errors, "
+            f"{routed_to_thinking_count} routed-to-thinking)"
+        )
 
     overall_elapsed = time.monotonic() - overall_start
 
