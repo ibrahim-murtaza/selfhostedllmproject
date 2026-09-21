@@ -383,12 +383,18 @@ registration:
 # so list only hosts you fully control and that cannot be repointed by an attacker. Entries
 # must include a port and must not be URLs, paths, CIDR ranges, bare hosts/IPs, or public IP
 # literals.
-# ocr:
-#   baseURL: '${OCR_BASEURL}'
-#   apiKey: '${OCR_API_KEY}'
-#   allowedAddresses:
-#     - 'localhost:8080'
-#     - '127.0.0.1:8080'
+ocr:
+  strategy: mistral_ocr
+  baseURL: 'http://host.docker.internal:8002/v1'
+  apiKey: 'clarisync-ocr-local'
+  mistralModel: 'docling'
+  allowedAddresses:
+    - 'host.docker.internal:8002'
+
+fileConfig:
+  defaultLLMDeliveryPath:
+    overrides:
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'text'
 
 # rateLimits:
 #   # Authenticated agent-event admission has its own API-key-principal bucket.

@@ -1,0 +1,135 @@
+{
+  "file": "test.pptx",
+  "slides": 6,
+  "facts": [
+    {
+      "id": "title",
+      "slide": 1,
+      "kind": "title",
+      "re": "Northwind Roadmap Review"
+    },
+    {
+      "id": "subtitle_code",
+      "slide": 1,
+      "kind": "subtitle",
+      "re": "PPTX-ALPHA-3141"
+    },
+    {
+      "id": "bullet_top",
+      "slide": 2,
+      "kind": "bullet",
+      "re": "Ship the mobile app"
+    },
+    {
+      "id": "bullet_nested",
+      "slide": 2,
+      "kind": "nested bullet",
+      "re": "Pilot with two departments"
+    },
+    {
+      "id": "bullet_priority2",
+      "slide": 2,
+      "kind": "bullet",
+      "re": "Cut onboarding time to 5 days"
+    },
+    {
+      "id": "table_header",
+      "slide": 3,
+      "kind": "table header",
+      "re": "Region.{0,20}Q1.{0,20}Q2"
+    },
+    {
+      "id": "table_west_q2",
+      "slide": 3,
+      "kind": "table cell in the right row",
+      "re": "West[^A-Za-z]{0,60}875"
+    },
+    {
+      "id": "table_east_q4",
+      "slide": 3,
+      "kind": "table cell in the right row",
+      "re": "East[^A-Za-z]{0,60}1720"
+    },
+    {
+      "id": "chart_title",
+      "slide": 4,
+      "kind": "chart title",
+      "re": "Headcount by Team"
+    },
+    {
+      "id": "chart_engineering",
+      "slide": 4,
+      "kind": "chart data value",
+      "re": "Engineering[^0-9]{0,30}47"
+    },
+    {
+      "id": "image_text",
+      "slide": 5,
+      "kind": "text inside a picture",
+      "re": "IMG-7702"
+    },
+    {
+      "id": "notes_date",
+      "slide": 6,
+      "kind": "speaker notes",
+      "re": "14 March 2027"
+    },
+    {
+      "id": "notes_code",
+      "slide": 6,
+      "kind": "speaker notes",
+      "re": "PPTX-OMEGA-9926"
+    },
+    {
+      "id": "bullet_last",
+      "slide": 6,
+      "kind": "bullet",
+      "re": "Confirm budget with Finance"
+    }
+  ],
+  "qa": [
+    {
+      "q": "What is the code on the title slide?",
+      "any": [
+        "PPTX-ALPHA-3141"
+      ]
+    },
+    {
+      "q": "What is the second priority on the Priorities slide?",
+      "any": [
+        "onboarding"
+      ]
+    },
+    {
+      "q": "What were the West region's Q2 sales?",
+      "any": [
+        "875"
+      ]
+    },
+    {
+      "q": "How many people are on the Engineering team according to the chart?",
+      "any": [
+        "47"
+      ]
+    },
+    {
+      "q": "What code is written in the picture on the Site Photo slide?",
+      "any": [
+        "IMG-7702"
+      ]
+    },
+    {
+      "q": "What launch date appears in the speaker notes?",
+      "any": [
+        "14 March 2027"
+      ]
+    },
+    {
+      "q": "How many slides does the presentation have?",
+      "any": [
+        "6",
+        "six"
+      ]
+    }
+  ]
+}
