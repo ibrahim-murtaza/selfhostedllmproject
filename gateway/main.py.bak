@@ -1,0 +1,272 @@
+"""
+FastAPI gateway -- OpenAI-compatible /v1/chat/completions endpoint that
+LibreChat calls instead of hitting Ollama directly.
+
+Scope:
+- Streaming (stream:true) is supported via simulated SSE: the full
+  response is generated normally (blocking), then sent back as a single
+  delta chunk plus a finish chunk -- satisfies clients requiring an SSE
+  shape without real token-by-token generation, which would require
+  rewriting ollama_client.py to consume Ollama's own stream.
+- Swap orchestration: explicitly unloads any other resident Quick model
+  before loading a new one (deterministic, not relying on Ollama's
+  idle-timeout auto-eviction -- see handoff note on why).
+- Routing: Stage 1 (image-attached -> vision) is real; Stages 2-4 are
+  no-ops (see routing.py) since only one text tier exists.
+- Every request logs swap type and Ollama's own reported timing
+  (load/eval/total duration) to gateway_metrics.jsonl, for the
+  response-latency success metric.
+
+Known gaps: /health doesn't actually check Ollama reachability yet.
+
+Run:
+    pip install fastapi uvicorn requests
+    uvicorn main:app --host 0.0.0.0 --port 8000
+"""
+
+import json
+import time
+import uuid
+
+METRICS_LOG_PATH = "gateway_metrics.jsonl"
+
+
+def _log_metrics(entry: dict) -> None:
+    entry["timestamp"] = time.time()
+    try:
+        with open(METRICS_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass  # a logging failure should never break the actual request
+
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from model_registry import MODEL_REGISTRY, ModelEntry
+from ollama_client import (
+    OllamaUnavailableError,
+    call_model,
+    get_loaded_models,
+    unload_model,
+)
+from pydantic import BaseModel
+from routing import route
+
+app = FastAPI()
+
+@app.exception_handler(HTTPException)
+async def openai_shaped_http_exception_handler(request: Request, exc: HTTPException):
+    """LibreChat's OpenAI-compatible parser expects {"error": {"message": ...}},
+    not FastAPI's default {"detail": ...} -- without this, error bodies show
+    as blank/"(no body)" in the UI instead of the actual message."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": exc.detail,
+                "type": "gateway_error",
+                "code": exc.status_code,
+            }
+        },
+    )
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str | None = None  # ignored for now -- routing decides, not the caller
+    messages: list[dict]
+    stream: bool = False
+
+
+def _extract_images_and_flatten(
+    messages: list[dict],
+) -> tuple[list[dict], list[str], bool]:
+    flattened = []
+    images: list[str] = []
+    last_index = len(messages) - 1
+
+    for i, msg in enumerate(messages):
+        content = msg.get("content")
+        if isinstance(content, str):
+            flattened.append({"role": msg["role"], "content": content})
+            continue
+
+        text_parts = []
+        for part in content or []:
+            if part.get("type") == "text":
+                text_parts.append(part.get("text", ""))
+            elif part.get("type") == "image_url" and i == last_index:
+                # Only route on an image in the newest message -- an image
+                # earlier in history shouldn't pin the whole thread to vision.
+                url = part.get("image_url", {}).get("url", "")
+                b64_data = url.split(",", 1)[-1] if url.startswith("data:") else url
+                images.append(b64_data)
+
+        flattened.append({"role": msg["role"], "content": " ".join(text_parts)})
+
+    return flattened, images, bool(images)
+
+
+def _ensure_loaded(model: ModelEntry) -> dict:
+    """
+    Returns which of three states occurred, since they have very different
+    latency implications: already resident (fastest), cold load (gateway
+    just started, nothing to evict), or an actual swap (explicit unload of
+    a different Quick model before this one loads).
+    """
+    loaded = get_loaded_models()
+    if model.ollama_tag in loaded:
+        return {"action": "already_loaded", "unload_ms": 0}
+
+    others_loaded = [
+        e.ollama_tag
+        for e in MODEL_REGISTRY.values()
+        if e.ollama_tag in loaded and e.ollama_tag != model.ollama_tag
+    ]
+    if not others_loaded:
+        return {"action": "cold_load", "unload_ms": 0}
+
+    unload_start = time.monotonic()
+    for tag in others_loaded:
+        unload_model(tag)
+    return {
+        "action": "swap",
+        "unload_ms": round((time.monotonic() - unload_start) * 1000, 1),
+    }
+
+
+def _sse_chunk(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _stream_response(model, messages, images, swap_info, request_start, has_image):
+    try:
+        result = call_model(model, messages, images=images or None)
+    except OllamaUnavailableError as e:
+        # Already streaming -- can't switch to a 503 status now, so emit
+        # the error as a chat message instead of silently dying.
+        yield _sse_chunk(
+            {
+                "id": f"chatcmpl-{uuid.uuid4().hex}",
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": model.ollama_tag,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "content": f"[Gateway error: {e}]",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        )
+        yield "data: [DONE]\n\n"
+        return
+    _log_metrics(
+        {
+            "model": model.ollama_tag,
+            "has_image": has_image,
+            "swap_action": swap_info["action"],
+            "unload_ms": swap_info["unload_ms"],
+            "ollama_load_ms": result["load_duration_ms"],
+            "ollama_total_ms": result["total_duration_ms"],
+            "gateway_total_ms": round((time.monotonic() - request_start) * 1000, 1),
+            "stream": True,
+        }
+    )
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+
+    yield _sse_chunk(
+        {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model.ollama_tag,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": result["content"]},
+                    "finish_reason": None,
+                }
+            ],
+        }
+    )
+    yield _sse_chunk(
+        {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model.ollama_tag,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+    )
+    yield "data: [DONE]\n\n"
+
+
+@app.post("/v1/chat/completions")
+def chat_completions(req: ChatCompletionRequest):
+    request_start = time.monotonic()
+    messages, images, has_image = _extract_images_and_flatten(req.messages)
+    model = route(messages, has_image)
+    print(f"[routing] has_image={has_image} -> {model.ollama_tag}")
+
+    try:
+        swap_info = _ensure_loaded(model)
+    except OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    if req.stream:
+        return StreamingResponse(
+            _stream_response(
+                model, messages, images, swap_info, request_start, has_image
+            ),
+            media_type="text/event-stream",
+        )
+
+    try:
+        result = call_model(model, messages, images=images or None)
+    except OllamaUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    _log_metrics(
+        {
+            "model": model.ollama_tag,
+            "has_image": has_image,
+            "swap_action": swap_info["action"],
+            "unload_ms": swap_info["unload_ms"],
+            "ollama_load_ms": result["load_duration_ms"],
+            "ollama_total_ms": result["total_duration_ms"],
+            "gateway_total_ms": round((time.monotonic() - request_start) * 1000, 1),
+            "stream": False,
+        }
+    )
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model.ollama_tag,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": result["content"]},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+
+@app.get("/health")
+def health():
+    """Reports whether the gateway can actually reach Ollama, not just
+    whether the gateway process itself is up -- reuses get_loaded_models()
+    since it's already the lightweight, fast reachability check."""
+    try:
+        get_loaded_models()
+    except OllamaUnavailableError as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "ollama_reachable": False, "detail": str(e)},
+        )
+    return {"status": "ok", "ollama_reachable": True}
