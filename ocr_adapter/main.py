@@ -64,7 +64,9 @@ async def mistral_shaped_errors(request: Request, exc: HTTPException):
         content={
             "object": "error",
             "message": exc.detail,
-            "type": "invalid_request_error" if exc.status_code < 500 else "server_error",
+            "type": (
+                "invalid_request_error" if exc.status_code < 500 else "server_error"
+            ),
             "code": exc.status_code,
         },
     )
@@ -106,7 +108,9 @@ def _convert(name: str, data: bytes) -> dict:
         )
     except (requests.ConnectionError, requests.ConnectTimeout) as e:
         print(f"[ocr] Docling unreachable: {e}")
-        raise HTTPException(status_code=503, detail="The document converter is not running.")
+        raise HTTPException(
+            status_code=503, detail="The document converter is not running."
+        )
     except requests.ReadTimeout:
         raise HTTPException(
             status_code=504,
@@ -119,7 +123,9 @@ def _convert(name: str, data: bytes) -> dict:
     except Exception:
         reason = (r.text or "").strip()[:300] or f"HTTP {r.status_code}"
     print(f"[ocr] Docling rejected {name!r}: {r.status_code} {reason}")
-    raise HTTPException(status_code=422 if r.status_code == 422 else r.status_code, detail=reason)
+    raise HTTPException(
+        status_code=422 if r.status_code == 422 else r.status_code, detail=reason
+    )
 
 
 # --- POST /v1/files ----------------------------------------------------------
@@ -136,7 +142,11 @@ async def upload_file(
     fid = uuid.uuid4().hex
     with _lock:
         _prune()
-        _files[fid] = {"name": file.filename or "document", "data": data, "created": time.time()}
+        _files[fid] = {
+            "name": file.filename or "document",
+            "data": data,
+            "created": time.time(),
+        }
     print(f"[ocr] upload {file.filename!r} ({len(data):,} bytes) -> {fid[:8]}")
     return {
         "id": fid,
@@ -215,4 +225,8 @@ def health():
         ok = requests.get(f"{DOCLING_URL}/health", timeout=3).status_code == 200
     except requests.RequestException:
         ok = False
-    return {"status": "ok" if ok else "degraded", "docling_reachable": ok, "files_held": len(_files)}
+    return {
+        "status": "ok" if ok else "degraded",
+        "docling_reachable": ok,
+        "files_held": len(_files),
+    }
