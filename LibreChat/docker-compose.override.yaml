@@ -4,6 +4,13 @@ services:
       - MONGO_URI=${MONGO_URI}
     volumes:
       - ./librechat.yaml:/app/librechat.yaml
+      - ./branding/index.html:/app/client/dist/index.html
+      - ./branding/clarisync-theme.css:/app/client/dist/assets/clarisync-theme.css
+      - ./branding/fonts:/app/client/dist/assets/fonts
+      - ./branding/logo.svg:/app/client/dist/assets/logo.svg
+      - ./branding/favicon-32x32.png:/app/client/dist/assets/favicon-32x32.png
+      - ./branding/favicon-16x16.png:/app/client/dist/assets/favicon-16x16.png
+      - ./branding/apple-touch-icon-180x180.png:/app/client/dist/assets/apple-touch-icon-180x180.png
   vectordb:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}

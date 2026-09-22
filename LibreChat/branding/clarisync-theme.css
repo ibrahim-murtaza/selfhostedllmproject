@@ -1,5 +1,7 @@
 /* clarisync-theme.css — overrides LibreChat v0.8.8-rc2 CSS variables (space-separated RGB).
-   Loaded AFTER the app stylesheet via a <link> in the mounted index.html. */
+   Loaded AFTER the app stylesheet via a <link> in the mounted index.html.
+   v2: surface-active(-alt) and brand-purple now use accent teal instead of grey/purple,
+   so the selected conversation and a couple of badge/progress elements read visibly on-brand. */
 html:root {
   --presentation: 247 248 248; /* #F7F8F8 */
   --surface-primary: 247 248 248; /* #F7F8F8 */
@@ -9,8 +11,8 @@ html:root {
   --surface-chat: 255 255 255; /* #FFFFFF */
   --surface-dialog: 255 255 255; /* #FFFFFF */
   --surface-hover: 228 235 236; /* #E4EBEC */
-  --surface-active: 220 227 228; /* #DCE3E4 */
-  --surface-active-alt: 220 227 228; /* #DCE3E4 */
+  --surface-active: 227 244 245; /* #E3F4F5 */
+  --surface-active-alt: 227 244 245; /* #E3F4F5 */
   --header-primary: 247 248 248; /* #F7F8F8 */
   --text-primary: 20 38 44; /* #14262C */
   --text-secondary: 74 94 101; /* #4A5E65 */
@@ -25,6 +27,7 @@ html:root {
   --surface-submit-hover: 22 50 60; /* #16323C */
   --surface-destructive: 198 40 40; /* #C62828 */
   --text-destructive: 198 40 40; /* #C62828 */
+  --brand-purple: 0 121 128; /* #007980 */
   --theme-font-family: Inter, system-ui, sans-serif;
 }
 html.dark:root {
@@ -36,8 +39,8 @@ html.dark:root {
   --surface-chat: 26 36 39; /* #1A2427 */
   --surface-dialog: 26 36 39; /* #1A2427 */
   --surface-hover: 34 47 52; /* #222F34 */
-  --surface-active: 38 52 58; /* #26343A */
-  --surface-active-alt: 38 52 58; /* #26343A */
+  --surface-active: 21 55 58; /* #15373A */
+  --surface-active-alt: 21 55 58; /* #15373A */
   --header-primary: 15 22 24; /* #0F1618 */
   --text-primary: 231 237 238; /* #E7EDEE */
   --text-secondary: 166 182 186; /* #A6B6BA */
@@ -52,11 +55,12 @@ html.dark:root {
   --surface-submit-hover: 115 210 215; /* #73D2D7 */
   --surface-destructive: 179 38 30; /* #B3261E */
   --text-destructive: 255 138 138; /* #FF8A8A */
+  --brand-purple: 77 198 205; /* #4DC6CD */
 }
 /* Fonts: Inter for reading, Poppins for headings and UI labels */
 body, .font-sans { font-family: Inter, system-ui, sans-serif; }
 h1, h2, h3, button, [role="menuitem"], [role="option"] { font-family: Poppins, Inter, system-ui, sans-serif; }
-/* Send button: brand colour instead of LibreChat's bg-text-primary */
+/* Send button: brand colour instead of LibreChat's bg-text-primary (only visible once composer has text / button is enabled) */
 [data-testid="send-button"]:not(:disabled) { background-color: #1F4756 !important; color: #FFFFFF !important; }
 html.dark [data-testid="send-button"]:not(:disabled) { background-color: #4DC6CD !important; color: #0F1618 !important; }
 /* Links and focus */
