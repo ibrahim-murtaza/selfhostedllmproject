@@ -1,0 +1,65 @@
+/* clarisync-theme.css — overrides LibreChat v0.8.8-rc2 CSS variables (space-separated RGB).
+   Loaded AFTER the app stylesheet via a <link> in the mounted index.html. */
+html:root {
+  --presentation: 247 248 248; /* #F7F8F8 */
+  --surface-primary: 247 248 248; /* #F7F8F8 */
+  --surface-primary-alt: 238 242 242; /* #EEF2F2 */
+  --surface-secondary: 238 242 242; /* #EEF2F2 */
+  --surface-tertiary: 228 235 236; /* #E4EBEC */
+  --surface-chat: 255 255 255; /* #FFFFFF */
+  --surface-dialog: 255 255 255; /* #FFFFFF */
+  --surface-hover: 228 235 236; /* #E4EBEC */
+  --surface-active: 220 227 228; /* #DCE3E4 */
+  --surface-active-alt: 220 227 228; /* #DCE3E4 */
+  --header-primary: 247 248 248; /* #F7F8F8 */
+  --text-primary: 20 38 44; /* #14262C */
+  --text-secondary: 74 94 101; /* #4A5E65 */
+  --text-secondary-alt: 95 113 119; /* #5F7177 */
+  --text-tertiary: 95 113 119; /* #5F7177 */
+  --border-light: 220 227 228; /* #DCE3E4 */
+  --border-medium: 201 211 213; /* #C9D3D5 */
+  --border-medium-alt: 201 211 213; /* #C9D3D5 */
+  --border-heavy: 169 183 186; /* #A9B7BA */
+  --ring-primary: 0 121 128; /* #007980 */
+  --surface-submit: 31 71 86; /* #1F4756 */
+  --surface-submit-hover: 22 50 60; /* #16323C */
+  --surface-destructive: 198 40 40; /* #C62828 */
+  --text-destructive: 198 40 40; /* #C62828 */
+  --theme-font-family: Inter, system-ui, sans-serif;
+}
+html.dark:root {
+  --presentation: 15 22 24; /* #0F1618 */
+  --surface-primary: 15 22 24; /* #0F1618 */
+  --surface-primary-alt: 20 29 32; /* #141D20 */
+  --surface-secondary: 26 36 39; /* #1A2427 */
+  --surface-tertiary: 34 47 52; /* #222F34 */
+  --surface-chat: 26 36 39; /* #1A2427 */
+  --surface-dialog: 26 36 39; /* #1A2427 */
+  --surface-hover: 34 47 52; /* #222F34 */
+  --surface-active: 38 52 58; /* #26343A */
+  --surface-active-alt: 38 52 58; /* #26343A */
+  --header-primary: 15 22 24; /* #0F1618 */
+  --text-primary: 231 237 238; /* #E7EDEE */
+  --text-secondary: 166 182 186; /* #A6B6BA */
+  --text-secondary-alt: 138 156 160; /* #8A9CA0 */
+  --text-tertiary: 138 156 160; /* #8A9CA0 */
+  --border-light: 38 52 58; /* #26343A */
+  --border-medium: 51 68 74; /* #33444A */
+  --border-medium-alt: 51 68 74; /* #33444A */
+  --border-heavy: 70 89 95; /* #46595F */
+  --ring-primary: 77 198 205; /* #4DC6CD */
+  --surface-submit: 77 198 205; /* #4DC6CD */
+  --surface-submit-hover: 115 210 215; /* #73D2D7 */
+  --surface-destructive: 179 38 30; /* #B3261E */
+  --text-destructive: 255 138 138; /* #FF8A8A */
+}
+/* Fonts: Inter for reading, Poppins for headings and UI labels */
+body, .font-sans { font-family: Inter, system-ui, sans-serif; }
+h1, h2, h3, button, [role="menuitem"], [role="option"] { font-family: Poppins, Inter, system-ui, sans-serif; }
+/* Send button: brand colour instead of LibreChat's bg-text-primary */
+[data-testid="send-button"]:not(:disabled) { background-color: #1F4756 !important; color: #FFFFFF !important; }
+html.dark [data-testid="send-button"]:not(:disabled) { background-color: #4DC6CD !important; color: #0F1618 !important; }
+/* Links and focus */
+.markdown a, .prose a { color: #007980; }
+html.dark .markdown a, html.dark .prose a { color: #4DC6CD; }
+:focus-visible { outline-color: #007980; }
