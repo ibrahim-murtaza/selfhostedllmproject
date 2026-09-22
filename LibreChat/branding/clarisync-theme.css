@@ -1,7 +1,46 @@
 /* clarisync-theme.css — overrides LibreChat v0.8.8-rc2 CSS variables (space-separated RGB).
    Loaded AFTER the app stylesheet via a <link> in the mounted index.html.
    v2: surface-active(-alt) and brand-purple now use accent teal instead of grey/purple,
-   so the selected conversation and a couple of badge/progress elements read visibly on-brand. */
+   so the selected conversation and a couple of badge/progress elements read visibly on-brand.
+   v3: self-hosted Poppins/Inter @font-face rules added (files in ./fonts/, mounted from
+   branding/fonts/ per docker-compose.override.yaml) — replaces the earlier system-font fallback. */
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/poppins-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/poppins-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/poppins-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/poppins-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/inter-400.woff2') format('woff2');
+}
+
 html:root {
   --presentation: 247 248 248; /* #F7F8F8 */
   --surface-primary: 247 248 248; /* #F7F8F8 */

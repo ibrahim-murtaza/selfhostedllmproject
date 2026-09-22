@@ -7,6 +7,14 @@ version: 1.3.15
 # Cache settings: Set to true to enable caching
 cache: true
 
+# No STT/TTS provider is configured for this deployment; default the
+# composer's microphone (browser-based STT, needs no provider) off so it
+# doesn't appear for new users. Existing users who already touched Settings
+# > Speech keep whatever they chose.
+speech:
+  speechTab:
+    speechToText: false
+
 # Langfuse connections are managed through Settings > Langfuse when available.
 # That flow verifies the credentials and stores the secret key encrypted; do not
 # place a plaintext langfuse.secretKey in this file. Environment-managed central
@@ -142,74 +150,33 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  customWelcome: 'Welcome to Clarisync Assistant!'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
   fileSearch: true
-  # Privacy policy settings
-  privacyPolicy:
-    externalUrl: 'https://librechat.ai/privacy-policy'
-    openNewTab: true
-
-  # Terms of service
-  termsOfService:
-    externalUrl: 'https://librechat.ai/tos'
-    openNewTab: true
-    modalAcceptance: true
-    modalTitle: 'Terms of Service for LibreChat'
-    modalContent: |
-      # Terms and Conditions for LibreChat
-
-      *Effective Date: February 18, 2024*
-
-      Welcome to LibreChat, the informational website for the open-source AI chat platform, available at https://librechat.ai. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://librechat.ai//privacy.
-
-      ## 1. Ownership
-
-      Upon purchasing a package from LibreChat, you are granted the right to download and use the code for accessing an admin panel for LibreChat. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from LibreChat.
-
-      ## 2. User Data
-
-      We collect personal data, such as your name, email address, and payment information, as described in our Privacy Policy. This information is collected to provide and improve our services, process transactions, and communicate with you.
-
-      ## 3. Non-Personal Data Collection
-
-      The Website uses cookies to enhance user experience, analyze site usage, and facilitate certain functionalities. By using the Website, you consent to the use of cookies in accordance with our Privacy Policy.
-
-      ## 4. Use of the Website
-
-      You agree to use the Website only for lawful purposes and in a manner that does not infringe the rights of, restrict, or inhibit anyone else's use and enjoyment of the Website. Prohibited behavior includes harassing or causing distress or inconvenience to any person, transmitting obscene or offensive content, or disrupting the normal flow of dialogue within the Website.
-
-      ## 5. Governing Law
-
-      These Terms shall be governed by and construed in accordance with the laws of the United States, without giving effect to any principles of conflicts of law.
-
-      ## 6. Changes to the Terms
-
-      We reserve the right to modify these Terms at any time. We will notify users of any changes by email. Your continued use of the Website after such changes have been notified will constitute your consent to such changes.
-
-      ## 7. Contact Information
-
-      If you have any questions about these Terms, please contact us at contact@librechat.ai.
-
-      By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
-
-  modelSelect: true
-  parameters: true
-  presets: true
+  modelSelect: false
+  parameters: false
+  presets: false
   prompts:
-    use: true
-    create: true
+    use: false
+    create: false
     share: false
     public: false
   bookmarks: true
   multiConvo: true
   agents:
-    use: true
-    create: true
+    use: false
+    create: false
     share: false
     public: false
+  skills: false
+  mcpServers:
+    use: false
+    create: false
+    share: false
+    public: false
+  memories: false
   # Scheduled chats are experimental and disabled unless explicitly enabled.
   # A deployment with Redis-backed resumable streams can run this on every replica.
   # A single-process deployment without Redis must also set
@@ -808,11 +775,11 @@ endpoints:
       apiKey: 'not-needed'
       baseURL: 'http://host.docker.internal:8000/v1'
       models:
-        default: ['quick-text', 'quick-vision']
+        default: ['quick-text']
         fetch: false
       titleConvo: true
       titleModel: 'current_model'
-      modelDisplayLabel: 'Clarisync Gateway'
+      modelDisplayLabel: 'Clarisync Assistant'
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
@@ -843,6 +810,28 @@ endpoints:
   #     # - "disabled": No trace information (default)
   #     # Trace output is logged to application log files for compliance auditing
   #     trace: "enabled"
+
+modelSpecs:
+  enforce: true
+  prioritize: true
+  list:
+    - name: 'quick'
+      label: 'Quick'
+      description: 'Fast answers for everyday writing, rephrasing and short summaries. Reads attached images automatically.'
+      default: true
+      hideBadgeRow: true
+      conversation_starters:
+        - 'Rephrase this email to sound clearer and more professional'
+        - 'Summarise the document and explain'
+        - 'Create a ClickUp task for this content'
+      preset:
+        endpoint: 'Clarisync Gateway'
+        model: 'quick-text'
+        modelLabel: 'Clarisync Assistant'
+        promptPrefix: |
+          If the user's message asks you to rephrase, summarize, translate, explain, or otherwise work on something (an email, document, clause, notes, etc.) but the actual content is not included in the message or attached as a file, do not invent a placeholder example to demonstrate with. Instead, briefly ask them to paste or attach the content first.
+          When asked to draft a ClickUp task, respond with a short task heading (a single clear line) followed by a "Description:" section, formatted so it can be pasted directly into ClickUp's title and description fields.
+
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
