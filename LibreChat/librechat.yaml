@@ -163,7 +163,7 @@ interface:
     create: false
     share: false
     public: false
-  bookmarks: true
+  bookmarks: false
   multiConvo: true
   agents:
     use: false

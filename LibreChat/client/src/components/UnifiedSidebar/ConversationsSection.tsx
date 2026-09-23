@@ -27,6 +27,7 @@ import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
 import { collectPinnedConversations } from '~/utils';
 import SearchBar from '~/components/Nav/SearchBar';
+import { ThemeSetting } from '~/components/Nav/Settings/controls';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
@@ -214,6 +215,9 @@ const ConversationsSection = memo(() => {
                         ) : undefined
                     }
                 />
+            </div>
+            <div className="border-t border-border-light px-3 py-2">
+                <ThemeSetting />
             </div>
         </div>
     );
