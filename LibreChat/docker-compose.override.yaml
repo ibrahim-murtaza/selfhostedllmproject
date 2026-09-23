@@ -1,5 +1,9 @@
 services:
   api:
+    image: librechat
+    build:
+      context: .
+      target: node
     environment:
       - MONGO_URI=${MONGO_URI}
     volumes:

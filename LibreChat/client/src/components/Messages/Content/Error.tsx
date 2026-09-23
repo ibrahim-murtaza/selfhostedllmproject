@@ -208,9 +208,8 @@ const errorMessages = {
   message_limit: (json: TMessageLimit) => {
     const { max, windowInMinutes } = json;
     const plural = max > 1 ? 's' : '';
-    return `You hit the message limit. You have a cap of ${max} message${plural} per ${
-      windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
-    }.`;
+    return `You hit the message limit. You have a cap of ${max} message${plural} per ${windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
+      }.`;
   },
   token_balance: (json: TTokenBalance, localize: LocalizeFunction) => {
     const { balance, tokenCost, promptTokens, generations } = json;
@@ -243,10 +242,10 @@ const errorMessages = {
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
-  const providerText = stripLangChainTroubleshootingUrl(text);
+  const providerText = stripLangChainTroubleshootingUrl(text).replace(/^[1-5]\d{2}\s+/, '');
   const errorMessage =
     providerText.length > 512 && !jsonString ? providerText.slice(0, 512) + '...' : providerText;
-  const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+  const defaultResponse = errorMessage;
 
   const langChainErrorKey = getLangChainErrorKey(text);
   if (langChainErrorKey != null) {
