@@ -9,7 +9,7 @@ A self-hosted AI chat platform for Clarisync employees. It runs on company hardw
 | Model serving | Ollama |
 | Document reading | Docling (CPU only) behind two small FastAPI services |
 | Data | MongoDB (chats, users), Postgres/pgvector (LibreChat's native file-upload feature only) |
-| Sign-in | Microsoft Entra ID over SAML (not configured yet, see `docs/SSO_INTEGRATION.md`) |
+| Sign-in | Microsoft Entra ID over SAML (not configured yet, see the SSO integration guide `SSO_INTEGRATION.md`, supplied separately by the maintainers) |
 
 ## Contents
 
@@ -120,8 +120,6 @@ Search index:  chat-meilisearch
 .
 |-- README.md
 |-- .gitignore
-|-- docs/
-|   `-- SSO_INTEGRATION.md          Guide for the SAML work
 |-- LibreChat/                      Patched LibreChat source and deployment config
 |   |-- api/  client/  packages/    Upstream source (patched files listed in section 8)
 |   |-- branding/                   Theme CSS, logo, favicons, index.html (bind-mounted into the container)
@@ -135,8 +133,7 @@ Search index:  chat-meilisearch
 |-- ocr_adapter/                    Mistral-OCR-compatible adapter (main.py)
 |-- modelfiles/quick/               Ollama Modelfiles (qwen3-8b and ministral3-8b are in use;
 |                                   other folders are test candidates)
-|-- testing/                        Model test runners, results, document test tools
-`-- design/                         UI design notes
+`-- testing/                        Model test runners, results, document test tools
 ```
 
 `mongo-data/` (the MongoDB data directory) exists only on the machine that runs the database and is never committed.
@@ -237,7 +234,7 @@ Keys the stack depends on (for a from-scratch file, or to check the supplied one
 | `ALLOW_EMAIL_LOGIN`, `ALLOW_REGISTRATION` | `true` until SAML is proven |
 | `OPENID_*` | leave empty. If OpenID is enabled, LibreChat disables SAML. |
 
-Leave the `SAML_*` keys empty until the SAML work starts (`docs/SSO_INTEGRATION.md`).
+Leave the `SAML_*` keys empty until the SAML work starts (see `SSO_INTEGRATION.md`).
 
 ### 5.4 Python services
 
@@ -447,7 +444,7 @@ To confirm the OCR adapter handled an Office file, look for an `[ocr] upload ...
 
 Sign-in is handled entirely by LibreChat's built-in SAML support against Microsoft Entra ID. The gateway, Docling service and OCR adapter are not involved and never see who is logged in. The protocol is SAML, not OIDC.
 
-Full instructions, the file map and the test plan are in `docs/SSO_INTEGRATION.md`.
+Full instructions, the file map and the test plan are in `SSO_INTEGRATION.md`, supplied separately by the maintainers.
 
 ---
 
