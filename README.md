@@ -200,6 +200,10 @@ docker run -d --name clarisync-mongo --restart unless-stopped `
 
 ### 5.3 LibreChat environment file
 
+`LibreChat/.env` is never committed. Get the working file from the maintainers (shared outside git) and place it at `LibreChat\.env`.
+
+To build one from scratch instead, start from LibreChat's template:
+
 ```powershell
 cd <repo>\LibreChat
 Copy-Item .env.example .env
@@ -213,7 +217,7 @@ New-Hex 32   # 64 hex characters
 New-Hex 16   # 32 hex characters
 ```
 
-Set these keys in `LibreChat/.env`:
+Keys the stack depends on (for a from-scratch file, or to check the supplied one):
 
 | Key | Value |
 |---|---|
@@ -229,7 +233,8 @@ Set these keys in `LibreChat/.env`:
 | `APP_TITLE` | `Clarisync Assistant` |
 | `ENDPOINTS` | `custom` (shows only the Clarisync Gateway endpoint) |
 | `SCHEDULES_SINGLE_PROCESS` | `true` (this deployment runs one process) |
-| `ALLOW_SOCIAL_LOGIN` | `false` until SAML is configured |
+| `ALLOW_SOCIAL_LOGIN`, `ALLOW_SOCIAL_REGISTRATION` | `false` until SAML is configured |
+| `ALLOW_EMAIL_LOGIN`, `ALLOW_REGISTRATION` | `true` until SAML is proven |
 | `OPENID_*` | leave empty. If OpenID is enabled, LibreChat disables SAML. |
 
 Leave the `SAML_*` keys empty until the SAML work starts (`docs/SSO_INTEGRATION.md`).
