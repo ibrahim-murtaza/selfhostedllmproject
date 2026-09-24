@@ -25,3 +25,8 @@ client/dist/
 Thumbs.db
 .vscode/settings.json
 *.code-workspace
+
+__pycache__/
+*.pyc
+gateway/gateway_metrics.jsonl
+gateway/gateway_dump/
