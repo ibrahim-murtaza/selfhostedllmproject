@@ -248,6 +248,8 @@ pip install fastapi uvicorn requests python-multipart
 pip install docling-slim==2.127.0
 ```
 
+If PowerShell refuses to run `Activate.ps1` ("running scripts is disabled"), run `Set-ExecutionPolicy -Scope Process Bypass` in that window first. It applies only to that window.
+
 Docling's scanned-PDF OCR uses RapidOCR with onnxruntime. If a scanned PDF fails on first use, run `pip install rapidocr onnxruntime`.
 
 ### 5.5 Build and start LibreChat

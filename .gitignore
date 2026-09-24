@@ -26,7 +26,12 @@ Thumbs.db
 .vscode/settings.json
 *.code-workspace
 
+# Python
 __pycache__/
 *.pyc
+.venv/
+venv/
+
+# Gateway runtime files
 gateway/gateway_metrics.jsonl
 gateway/gateway_dump/
