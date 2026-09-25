@@ -500,8 +500,3 @@ Full instructions, the file map and the test plan are in `SSO_INTEGRATION.md`, s
 - Check a running stack with the health calls in section 5.7 and by attaching one file of each type.
 
 ---
-
-## 16. Maintainers
-
-- Ibrahim Murtaza: model serving, LibreChat interface layer, resource management.
-- Ryef Taimur Nawaz: identity and access, data and storage, gateway and routing, observability.
