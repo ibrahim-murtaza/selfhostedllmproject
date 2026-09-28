@@ -292,7 +292,7 @@ function createSamlCallback(existingUsersOnly = false) {
       }
 
       logger.info(`[samlStrategy] Login success for user: ${user._id}`);
-
+      user.id = user._id.toString();
       done(null, user);
     } catch (err) {
       logger.error('[samlStrategy] Login failed', err);

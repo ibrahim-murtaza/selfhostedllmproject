@@ -1,5 +1,6 @@
 # MongoDB data
 mongo-data/
+mongo-data-backup/
 LibreChat/data-node/
 
 # LibreChat runtime/generated data
@@ -35,3 +36,5 @@ venv/
 # Gateway runtime files
 gateway/gateway_metrics.jsonl
 gateway/gateway_dump/
+
+logs/
