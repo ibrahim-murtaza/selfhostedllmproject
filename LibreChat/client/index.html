@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <base href="/" />
-    <meta name="theme-color" content="#171717" />
+    <meta name="theme-color" content="#F7F8F8" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       name="description"
-      content="LibreChat - An open source chat application with support for multiple AI models"
+      content="Clarisync Assistant - internal AI assistant, self-hosted on Clarisync infrastructure"
     />
-    <title>LibreChat</title>
+    <title>Clarisync Assistant</title>
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180.png" />
@@ -35,16 +35,16 @@
       if (theme === 'high-contrast-dark') {
         backgroundColor = '#000000';
       } else if (theme === 'high-contrast-light') {
-        backgroundColor = '#ffffff';
+        backgroundColor = '#F7F8F8';
       } else if (theme === 'dark') {
-        backgroundColor = '#0d0d0d';
+        backgroundColor = '#0F1618';
       } else if (theme === 'light') {
-        backgroundColor = '#ffffff';
+        backgroundColor = '#F7F8F8';
       } else {
         /* `system`, and anything unset or unrecognised, which ThemeProvider also
          * resolves as `system`. The OS decides the scheme and the contrast, and
          * a contrast request moves the dark canvas to pure black, so keying off
-         * the scheme alone would flash #0d0d0d behind the black palette.
+         * the scheme alone would flash #0F1618 behind the black palette.
          * The three contrast queries mirror ThemeProvider's `CONTRAST_QUERIES`:
          * a Windows Contrast Theme reports `forced-colors: active` with
          * `prefers-contrast: custom`, never `more`. */
@@ -59,8 +59,8 @@
         backgroundColor = prefersDarkScheme
           ? prefersMoreContrast
             ? '#000000'
-            : '#0d0d0d'
-          : '#ffffff';
+            : '#0F1618'
+          : '#F7F8F8';
       }
 
       loadingContainerStyle.innerHTML = `
@@ -233,5 +233,6 @@
     <div id="root">
       <div id="loading-container"></div>
     </div>
+    <link rel="stylesheet" href="assets/clarisync-theme.css" />
   </body>
 </html>

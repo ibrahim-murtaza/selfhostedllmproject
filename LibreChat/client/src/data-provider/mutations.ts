@@ -20,7 +20,6 @@ import {
 } from '~/utils';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
-import { useConversationTagsQuery } from './queries';
 
 export const useUpdateConversationMutation = (
   id: string,
@@ -49,7 +48,6 @@ export const useTagConversationMutation = (
   options?: t.updateTagsInConvoOptions,
 ): UseMutationResult<t.TTagConversationResponse, unknown, t.TTagConversationRequest, unknown> => {
   const queryClient = useQueryClient();
-  const query = useConversationTagsQuery();
   const { updateTagsInConversation } = useUpdateTagsInConvo();
   return useMutation(
     (payload: t.TTagConversationRequest) =>
@@ -59,7 +57,7 @@ export const useTagConversationMutation = (
         /** The pinned query is keyed by the active bookmark filter, so changing a
          * chat's tags can move it in or out of that filtered set. */
         queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
-        query.refetch();
+        queryClient.invalidateQueries([QueryKeys.conversationTags]);
         updateTagsInConversation(conversationId, updatedTags);
         options?.onSuccess?.(updatedTags, ...rest);
       },
