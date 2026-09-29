@@ -106,3 +106,10 @@ html.dark [data-testid="send-button"]:not(:disabled) { background-color: #4DC6CD
 .markdown a, .prose a { color: #007980; }
 html.dark .markdown a, html.dark .prose a { color: #4DC6CD; }
 :focus-visible { outline-color: #007980; }
+
+
+/* logo-mark: square, invisible frame */
+div:has(> img[src*="logo-mark"]) { border-radius: 0 !important; border: 0 !important; box-shadow: none !important; background: transparent !important; overflow: visible !important; }
+img[src*="logo-mark"] { object-fit: contain !important; }
+/* hide model-selector icon (keeps welcome icon) */
+div:has(> div > img[src*="logo-mark"][alt="quick"]) { display: none !important; }

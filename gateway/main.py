@@ -98,8 +98,12 @@ ERROR_HTTP = {
 # prompts are measured exactly by Ollama (token_probe.py); the constants below
 # only cover what the probe doesn't.
 CHARS_PER_TOKEN = 3  # conservative fallback estimate when there is no exact count
-MAX_CHARS_PER_TOKEN = 6  # most favourable ratio seen; more chars than budget*6 can't fit
-PROBE_MIN_CHARS = 20_000  # below this even 1 char/token fits the budget: no probe needed
+MAX_CHARS_PER_TOKEN = (
+    6  # most favourable ratio seen; more chars than budget*6 can't fit
+)
+PROBE_MIN_CHARS = (
+    20_000  # below this even 1 char/token fits the budget: no probe needed
+)
 OUTPUT_RESERVE_TOKENS = 4096  # room left in the window for the model's answer
 
 # ---- User-facing wording (plain language, no internal labels) ---------------
@@ -131,7 +135,9 @@ def _msg_too_many_pages(filename: str, pages: str, limit: str) -> str:
 
 
 def _msg_file_too_large(filename: str, limit_mb: str) -> str:
-    return f"'{filename}' is too large. Please upload a file smaller than {limit_mb} MB."
+    return (
+        f"'{filename}' is too large. Please upload a file smaller than {limit_mb} MB."
+    )
 
 
 def _msg_unreadable(filename: str) -> str:
@@ -326,7 +332,9 @@ def _conversion_failure(filename: str, e: Exception) -> GatewayReply:
             _msg_file_too_large(filename, mb.group(1) if mb else "25"),
             detail=reason,
         )
-    return GatewayReply("unreadable_attachment", _msg_unreadable(filename), detail=reason)
+    return GatewayReply(
+        "unreadable_attachment", _msg_unreadable(filename), detail=reason
+    )
 
 
 def _document_block(file_obj: dict, doc_stats: dict) -> str:
@@ -408,7 +416,22 @@ def _extract_images_and_flatten(
                 # Unlike images, files are converted wherever they appear in
                 # the history: LibreChat resends them every turn and the model
                 # needs the document in context for follow-up questions.
-                doc_blocks.append(_document_block(part.get("file") or {}, doc_stats))
+                file_obj = part.get("file") or {}
+                try:
+                    doc_blocks.append(_document_block(file_obj, doc_stats))
+                except GatewayReply as err:
+                    # Only the newest message may fail the request. An unreadable
+                    # or over-limit file from an earlier turn is skipped, so it
+                    # doesn't block every later upload in the same chat.
+                    if i == last_index or err.reason not in (
+                        "unreadable_attachment",
+                        "bad_attachment",
+                    ):
+                        raise
+                    doc_blocks.append(
+                        f"[Attached document: {file_obj.get('filename') or 'document'} "
+                        f"could not be read and was skipped]"
+                    )
 
         text = " ".join(text_parts)
         if doc_blocks:

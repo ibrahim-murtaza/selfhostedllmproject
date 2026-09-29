@@ -164,7 +164,7 @@ interface:
     share: false
     public: false
   bookmarks: false
-  multiConvo: true
+  multiConvo: false
   agents:
     use: false
     create: false
@@ -817,13 +817,14 @@ modelSpecs:
   list:
     - name: 'quick'
       label: 'Quick'
+      iconURL: '/assets/logo-mark.svg'
       description: 'Fast answers for everyday writing, rephrasing and short summaries. Reads attached images automatically.'
       default: true
       hideBadgeRow: true
       conversation_starters:
-        - 'Rephrase this email to sound clearer and more professional'
-        - 'Summarise the document and explain'
-        - 'Create a ClickUp task for this content'
+        - 'Draft a polite reminder email about an overdue invoice'
+        - 'Write a short agenda for a weekly team meeting'
+        - 'What can you help me with?'
       preset:
         endpoint: 'Clarisync Gateway'
         model: 'quick-text'
