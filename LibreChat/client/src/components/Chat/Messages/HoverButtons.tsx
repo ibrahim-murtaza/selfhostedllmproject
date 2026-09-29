@@ -228,7 +228,7 @@ const HoverButtons = ({
       )}
 
       {/* Edit Button */}
-      {!isSubagentThreadReadOnly && isEditableEndpoint && !hideEditButton && (
+      {!isSubagentThreadReadOnly && isEditableEndpoint && !hideEditButton && isCreatedByUser && (
         <HoverButton
           id={`edit-${message.messageId}`}
           onClick={onEdit}
