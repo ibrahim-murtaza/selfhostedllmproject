@@ -44,6 +44,8 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.exceptions import ConversionError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from starlette.concurrency import run_in_threadpool
 
 MAX_BYTES = 25 * 1024 * 1024  # reject anything larger
@@ -52,6 +54,8 @@ MAX_BYTES = 25 * 1024 * 1024  # reject anything larger
 # worst-case conversion time at roughly two minutes.
 MAX_PAGES = 30
 CACHE_MAX = 32  # documents kept in memory
+MAX_PICTURES = 10  # pictures read (OCR) per PowerPoint file
+MIN_PICTURE_PX = 120  # skip icons and logos smaller than this (width or height)
 
 _pipeline_options = PdfPipelineOptions()
 _pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
@@ -93,6 +97,83 @@ def _clean(markdown: str) -> str:
     return re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", markdown)
 
 
+_PICTURE_EXTS = {"png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"}
+
+
+def _pictures(shapes):
+    """Every picture on a slide, including ones inside groups."""
+    for sh in shapes:
+        try:
+            if sh.shape_type == MSO_SHAPE_TYPE.GROUP:
+                yield from _pictures(sh.shapes)
+            elif hasattr(sh, "image"):
+                yield sh
+        except Exception:
+            continue
+
+
+_ocr_engine = None
+
+
+def _ocr_picture(blob: bytes) -> str:
+    """Text found in one picture. Calls RapidOCR (already installed for
+    Docling) directly: far faster than running a whole Docling conversion on
+    the image. The engine loads on first use; the caller holds _lock."""
+    global _ocr_engine
+    import numpy as np
+    from PIL import Image
+    from rapidocr import RapidOCR
+
+    if _ocr_engine is None:
+        _ocr_engine = RapidOCR()
+    out = _ocr_engine(np.array(Image.open(BytesIO(blob)).convert("RGB")))
+    return " ".join(out.txts) if getattr(out, "txts", None) else ""
+
+
+def _pptx_extras(data: bytes) -> str:
+    """Speaker notes and text inside pictures: the two things Docling's
+    PowerPoint reader leaves out. Returns Markdown to append to Docling's
+    output ("" if there is nothing). Never raises: a failure here must not
+    break the conversion. The caller holds _lock (this uses the shared OCR engine)."""
+    try:
+        prs = Presentation(BytesIO(data))
+    except Exception:
+        return ""
+    notes: list[str] = []
+    pictures: list[str] = []
+    seen: set[str] = set()
+    for n, slide in enumerate(prs.slides, 1):
+        try:
+            frame = slide.notes_slide.notes_text_frame if slide.has_notes_slide else None
+            if frame is not None and frame.text.strip():
+                notes.append(f"Slide {n}: {frame.text.strip()}")
+            for sh in _pictures(slide.shapes):
+                if len(seen) >= MAX_PICTURES:
+                    break
+                try:
+                    img = sh.image
+                    width, height = img.size
+                    if img.ext not in _PICTURE_EXTS or min(width, height) < MIN_PICTURE_PX:
+                        continue
+                    digest = hashlib.sha1(img.blob).hexdigest()
+                    if digest in seen:  # same logo on every slide: read it once
+                        continue
+                    seen.add(digest)
+                    text = " ".join(_ocr_picture(img.blob).split())
+                    if text:
+                        pictures.append(f"Slide {n}: {text}")
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    out = ""
+    if notes:
+        out += "\n\n## Speaker notes\n\n" + "\n\n".join(notes)
+    if pictures:
+        out += "\n\n## Text found in pictures\n\n" + "\n\n".join(pictures)
+    return out
+
+
 def _convert(name: str, data: bytes, key: str) -> tuple[str, bool, float]:
     with _lock:
         if key in _cache:
@@ -104,6 +185,8 @@ def _convert(name: str, data: bytes, key: str) -> tuple[str, bool, float]:
             max_num_pages=MAX_PAGES,
         )
         markdown = _clean(result.document.export_to_markdown())
+        if name.lower().endswith(".pptx"):
+            markdown += _pptx_extras(data)
         _cache[key] = markdown
         while len(_cache) > CACHE_MAX:
             _cache.popitem(last=False)

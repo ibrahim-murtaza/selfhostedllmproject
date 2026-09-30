@@ -38,3 +38,8 @@ gateway/gateway_metrics.jsonl
 gateway/gateway_dump/
 
 logs/
+testing/test.jpg
+testing/big_test.jpg
+testing/docling/docling_pptx.json
+testing/docling/test.jpg
+testing/docling/big_test.jpg
