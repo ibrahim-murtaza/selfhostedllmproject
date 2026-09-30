@@ -43,3 +43,11 @@ Bar chart
 
 - Confirm budget with Finance
 - Book the launch review
+
+## Speaker notes
+
+Slide 6: Speaker notes: the launch date is 14 March 2027. Internal code PPTX-OMEGA-9926.
+
+## Text found in pictures
+
+Slide 5: Site inspection photo Scan code: IMG-7702
