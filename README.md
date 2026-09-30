@@ -97,8 +97,8 @@ Search index:  chat-meilisearch
 - PDF attachments arrive as base64 file parts on every turn. The gateway converts each through Docling and places the Markdown in the same message as the user's text.
 - Size guard: refuses prompts that exceed the model's context window, using Ollama's exact token count for large prompts.
 - Errors the user can act on (unreadable file, over the page limit, chat too long) return HTTP 400 with an OpenAI-shaped body. Ollama or Docling outages return 503 or 504.
-- Streaming is simulated: the full answer is generated, then sent as one chunk.
-- Every request appends a line to `gateway/gateway_metrics.jsonl` (swap type, Ollama's own load and total durations, document timings).
+- Streaming: text answers stream token by token from Ollama. Image (vision) answers are generated in full, then sent as one chunk.
+- Every request appends a line to `gateway/gateway_metrics.jsonl` (swap type, Ollama's own load and total durations, document timings). Streamed text requests also log `ttft_ms` (time to first token, including any document wait) and `output_tokens`. LibreChat's automatic title-generation requests appear as `stream: false` rows; exclude them when analysing chat latency.
 - `GET /health` reports Ollama and Docling reachability.
 
 **Docling service** (`docling_service/`): CPU only, warm-started, in-memory cache keyed by file hash (32 documents), one conversion at a time, 25 MB and 30 page limits. Bound to `127.0.0.1` because it has no authentication.
@@ -300,11 +300,31 @@ To debug by hand, stop the service first (a manual `uvicorn` on a port already i
 
 ```powershell
 cd <repo>\gateway
-..\.venv\Scripts\Activate.ps1
 uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 Use port 8001 (`docling_service`) and 8002 (`ocr_adapter`) for the others, and `Start-Service` when done. Do heavy dev testing outside pilot hours; prod shares the gateway and the single GPU.
+
+**Installing a service (one time, elevated PowerShell).** The services run `uvicorn.exe` from the system Python 3.13 of the `AI` user (`C:\Users\AI\AppData\Local\Programs\Python\Python313\Scripts\uvicorn.exe`), not from the venv in 5.4, so install the packages in that Python too. The gateway is set up like this; the Docling and OCR services follow the same pattern with their own folder and port (8001 for `docling_service`, 8002 for `ocr_adapter`), and the OCR service depends on Docling:
+
+```powershell
+$nssm = 'C:\Users\AI\AppData\Local\Microsoft\WinGet\Links\nssm.exe'
+$repo = '<repo>'   # the prod repo
+& $nssm install clarisync-gateway 'C:\Users\AI\AppData\Local\Programs\Python\Python313\Scripts\uvicorn.exe'
+& $nssm set clarisync-gateway AppParameters 'main:app --host 127.0.0.1 --port 8000'
+& $nssm set clarisync-gateway AppDirectory "$repo\gateway"
+& $nssm set clarisync-gateway AppExit Default Restart
+& $nssm set clarisync-gateway AppRestartDelay 5000
+& $nssm set clarisync-gateway AppStdout "$repo\logs\clarisync-gateway.log"
+& $nssm set clarisync-gateway AppStderr "$repo\logs\clarisync-gateway.log"
+& $nssm set clarisync-gateway AppRotateFiles 1
+& $nssm set clarisync-gateway AppRotateBytes 10485760
+& $nssm set clarisync-gateway DependOnService clarisync-docling
+& $nssm set clarisync-gateway ObjectName '.\AI' '<password of the AI account>'
+& $nssm set clarisync-gateway Start SERVICE_AUTO_START
+```
+
+Create the `logs\` folder first. The full settings of any installed service can be printed with `nssm dump <service>`.
 
 ### 5.7 Health checks
 
@@ -462,6 +482,8 @@ ollama ps
 
 To confirm the OCR adapter handled an Office file, look for an `[ocr] upload ...` line in `logs\clarisync-ocr.log`. If the adapter is down, LibreChat silently falls back to its own parser for DOCX and XLSX.
 
+---
+
 ## 11. Sign-in (SAML)
 
 Sign-in is handled entirely by LibreChat's built-in SAML support against Microsoft Entra ID. The gateway, Docling service and OCR adapter are not involved and never see who is logged in. The protocol is SAML, not OIDC.
@@ -501,7 +523,7 @@ Sign-in is handled entirely by LibreChat's built-in SAML support against Microso
 
 ## 13. Known issues and limitations
 
-- **Streaming is simulated.** The user sees the answer arrive in one piece.
+- **Vision answers are not streamed.** Text answers stream live; an answer to an image request arrives in one piece.
 - **Single card, single resident model.** Image requests pay a model-swap delay of several seconds.
 - **Unsupported file types.** LibreChat gives some types no delivery path (archives, other presentation formats) and drops them without an error. The model may then invent an answer.
 - **Office files** have no gateway page limit. Only the size guard applies.
