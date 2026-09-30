@@ -5,17 +5,21 @@ by test_runner.py and vision_test_runner.py, so gateway behavior matches
 what was actually tested rather than diverging into something new.
 """
 
-import requests
+import json
 
+import requests
 from model_registry import ModelEntry
 
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 TIMEOUT_SECONDS = 180
 
+
 class OllamaUnavailableError(Exception):
     """Raised when Ollama can't be reached or times out -- lets main.py
     return a clean error instead of a raw 500 with a stack trace."""
+
     pass
+
 
 def get_loaded_models() -> set[str]:
     """Return the set of Ollama model tags currently resident in VRAM."""
@@ -80,12 +84,16 @@ def call_model(
     # else "modelfile" placement -- num_ctx is already baked in, don't override.
 
     try:
-        resp = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=TIMEOUT_SECONDS)
+        resp = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=TIMEOUT_SECONDS
+        )
         resp.raise_for_status()
     except requests.exceptions.ConnectionError:
         raise OllamaUnavailableError("Cannot reach Ollama -- is it running?")
     except requests.exceptions.Timeout:
-        raise OllamaUnavailableError(f"Ollama did not respond within {TIMEOUT_SECONDS}s.")
+        raise OllamaUnavailableError(
+            f"Ollama did not respond within {TIMEOUT_SECONDS}s."
+        )
     except requests.exceptions.HTTPError as e:
         raise OllamaUnavailableError(f"Ollama returned an error: {e}")
     data = resp.json()
@@ -112,3 +120,63 @@ def call_model(
         "prompt_eval_duration_ms": _ns_to_ms("prompt_eval_duration"),
         "eval_duration_ms": _ns_to_ms("eval_duration"),
     }
+
+
+def stream_model(model: ModelEntry, messages: list[dict]):
+    """
+    Streaming variant of call_model, for TEXT requests only (no images).
+
+    Generator. Yields ("delta", text) for each piece of the answer as Ollama
+    produces it, then exactly one ("done", final) where `final` is Ollama's
+    last JSON line (it carries the timing fields and prompt_eval_count).
+    Raises OllamaUnavailableError if Ollama can't be reached, reports an
+    error, or stops before finishing.
+
+    The HTTP response is opened in a `with` block, so if the caller stops
+    iterating (the user pressed Stop and LibreChat closed the connection), the
+    connection to Ollama is closed too and Ollama stops generating.
+    """
+    payload = {
+        "model": model.ollama_tag,
+        "messages": messages,
+        "stream": True,
+        "think": False,  # same as call_model for text models
+    }
+    if model.context_placement == "request":
+        payload["options"] = {"num_ctx": model.max_context}
+
+    try:
+        # timeout=(connect, read): read is the longest wait for the NEXT piece
+        # of data, not for the whole answer. A cold model load counts as one wait.
+        with requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json=payload,
+            stream=True,
+            timeout=(10, TIMEOUT_SECONDS),
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                data = json.loads(line)
+                if data.get("error"):
+                    raise OllamaUnavailableError(
+                        f"Ollama returned an error: {data['error']}"
+                    )
+                piece = (data.get("message") or {}).get("content", "")
+                if piece:
+                    yield ("delta", piece)
+                if data.get("done"):
+                    yield ("done", data)
+                    return
+    except requests.exceptions.ConnectionError:
+        raise OllamaUnavailableError("Cannot reach Ollama -- is it running?")
+    except requests.exceptions.Timeout:
+        raise OllamaUnavailableError(
+            f"Ollama did not respond within {TIMEOUT_SECONDS}s."
+        )
+    except requests.exceptions.HTTPError as e:
+        raise OllamaUnavailableError(f"Ollama returned an error: {e}")
+    except (requests.exceptions.ChunkedEncodingError, ValueError) as e:
+        raise OllamaUnavailableError(f"Ollama's answer was interrupted: {e}")
+    raise OllamaUnavailableError("Ollama stopped before finishing the answer.")

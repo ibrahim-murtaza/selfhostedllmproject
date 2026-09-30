@@ -2,6 +2,8 @@
 
 A self-hosted AI chat platform for Clarisync employees. It runs on company hardware so confidential work stays inside Clarisync's infrastructure instead of going to public AI tools.
 
+**This repository is the dev stack.** LibreChat on port 3081, admin panel on `127.0.0.1:3001`, original container names, MongoDB `clarisync-mongo` on `127.0.0.1:27017`, image `librechat`. It uses the shared native services (gateway, Docling, OCR adapter), which run from the prod repo (`self-hosted-llm`); see sections 5.6 and 10. Do not set `COMPOSE_PROJECT_NAME` in this repo's `.env`.
+
 | Layer | Component |
 |---|---|
 | Interface | LibreChat (patched, built locally) |
@@ -9,7 +11,7 @@ A self-hosted AI chat platform for Clarisync employees. It runs on company hardw
 | Model serving | Ollama |
 | Document reading | Docling (CPU only) behind two small FastAPI services |
 | Data | MongoDB (chats, users), Postgres/pgvector (LibreChat's native file-upload feature only) |
-| Sign-in | Microsoft Entra ID over SAML (not configured yet, see the SSO integration guide `SSO_INTEGRATION.md`, supplied separately by the maintainers) |
+| Sign-in | Microsoft Entra ID over SAML, handled by LibreChat's built-in support (section 11) |
 
 ## Contents
 
@@ -56,9 +58,10 @@ Only one model is resident in VRAM at a time. The text model is the default. The
 **Status**
 
 - Gateway, Docling pipeline and OCR adapter: built and verified.
-- Branding: applied. Font files and welcome/footer text are not supplied.
-- SAML sign-in: not configured. Local email login is active.
-- Network exposure of the gateway, OCR adapter and MongoDB ports: open item (section 12).
+- Branding: applied and baked into the client build (section 9).
+- SAML sign-in: working end-to-end against Microsoft Entra ID on both stacks. Local email login is off except a break-glass admin. Still served on `localhost` ports; the move to `https://192.168.90.22` is pending HTTPS setup (section 11).
+- Two stacks run side by side on the shared machine: prod (the pilot, port 3080) and dev (3081). They share the native services (gateway, Docling, OCR adapter) and the GPU (section 10).
+- Network exposure: gateway, OCR adapter, Docling, Ollama and both MongoDB instances are bound to `127.0.0.1` (section 6). Open items: firewall scoping for RDP/AnyDesk/Zabbix, and HTTPS (section 12).
 - Pilot success is measured: response latency, GPU pressure, and negative feedback classified by cause (capability, performance, product).
 
 ---
@@ -122,9 +125,9 @@ Search index:  chat-meilisearch
 |-- .gitignore
 |-- LibreChat/                      Patched LibreChat source and deployment config
 |   |-- api/  client/  packages/    Upstream source (patched files listed in section 8)
-|   |-- branding/                   Theme CSS, logo, favicons, index.html (bind-mounted into the container)
-|   |-- docker-compose.yml          Upstream compose file (bundled MongoDB service removed)
-|   |-- docker-compose.override.yaml  Local build, Mongo URI, branding mounts
+|   |-- branding/                   Reference copy of the branding files (live copies are in client/, baked into the build)
+|   |-- docker-compose.yml          Upstream compose file (bundled MongoDB removed; container names use ${CONTAINER_PREFIX:-})
+|   |-- docker-compose.override.yaml  Local build, Mongo URI, librechat.yaml mount
 |   |-- librechat.yaml              App configuration
 |   `-- .env.example                Template. The real .env is never committed.
 |-- gateway/                        FastAPI gateway (main.py, model_registry.py, routing.py,
@@ -186,14 +189,14 @@ LibreChat's own bundled MongoDB service is removed from `LibreChat/docker-compos
 
 ```powershell
 docker run -d --name clarisync-mongo --restart unless-stopped `
-  -p 27017:27017 `
+  -p 127.0.0.1:27017:27017 `
   -v "<data-dir>\mongo-data:/data/db" `
   -e MONGO_INITDB_ROOT_USERNAME=clarisync-admin `
   -e MONGO_INITDB_ROOT_PASSWORD=<choose-a-password> `
   mongo:8.0
 ```
 
-`<data-dir>` is any folder outside the repository. The container is not part of `docker compose`, so `restart unless-stopped` is what brings it back after a Docker or host restart.
+`<data-dir>` is any folder outside the repository. The container is not part of `docker compose`, so `restart unless-stopped` is what brings it back after a Docker or host restart. The prod stack uses its own instance (`clarisync-mongo-prod`, port 27018).
 
 ### 5.3 LibreChat environment file
 
@@ -218,7 +221,7 @@ Keys the stack depends on (for a from-scratch file, or to check the supplied one
 
 | Key | Value |
 |---|---|
-| `PORT` | `3080` |
+| `PORT` | `3081` |
 | `MONGO_URI` | `mongodb://clarisync-admin:<url-encoded-password>@host.docker.internal:27017/LibreChat?authSource=admin` |
 | `CREDS_KEY` | 64 hex characters |
 | `CREDS_IV` | 32 hex characters |
@@ -230,11 +233,16 @@ Keys the stack depends on (for a from-scratch file, or to check the supplied one
 | `APP_TITLE` | `Clarisync Assistant` |
 | `ENDPOINTS` | `custom` (shows only the Clarisync Gateway endpoint) |
 | `SCHEDULES_SINGLE_PROCESS` | `true` (this deployment runs one process) |
-| `ALLOW_SOCIAL_LOGIN`, `ALLOW_SOCIAL_REGISTRATION` | `false` until SAML is configured |
-| `ALLOW_EMAIL_LOGIN`, `ALLOW_REGISTRATION` | `true` until SAML is proven |
+| `ALLOW_SOCIAL_LOGIN`, `ALLOW_SOCIAL_REGISTRATION` | `true`, `false` (SAML on; first-time SAML users are still auto-created) |
+| `ALLOW_EMAIL_LOGIN`, `ALLOW_REGISTRATION` | `false`, `false` (local login and registration off) |
+| `ALLOW_EMAIL_LOGIN_OVERRIDE` | `true` (break-glass API login, logged) |
+| `LOGIN_MAX`, `LOGIN_WINDOW` | LibreChat's local-login rate limiter. It also fires on the SAML route. Prod `LOGIN_MAX=7`, dev `20`. |
+| `COMPOSE_PROJECT_NAME`, `CONTAINER_PREFIX`, `LIBRECHAT_IMAGE` | Prod only (`clarisync-prod`, `prod-`, `librechat-prod`). Never set `COMPOSE_PROJECT_NAME` on dev; it would orphan dev's volumes. |
 | `OPENID_*` | leave empty. If OpenID is enabled, LibreChat disables SAML. |
 
-Leave the `SAML_*` keys empty until the SAML work starts (see `SSO_INTEGRATION.md`).
+The `SAML_*` keys are populated in the working `.env` (entry point, issuer, callback URL, certificate, session secret, and the email/given-name/surname claim mappings to Microsoft's default URNs). `SAML_CALLBACK_URL` must be absolute; a relative value fails with AADSTS7500511. See section 11.
+
+Changes to `.env` are not picked up by `docker compose restart api`; use `docker compose up -d --force-recreate api`.
 
 ### 5.4 Python services
 
@@ -263,32 +271,40 @@ docker compose up -d
 docker ps
 ```
 
-Expected containers: `LibreChat`, `admin-panel`, `chat-meilisearch`, `vectordb`, `rag_api`, plus `clarisync-mongo` from step 5.2. `docker compose` prints harmless `UID`/`GID` warnings on Windows.
+Expected containers: `LibreChat`, `admin-panel`, `chat-meilisearch`, `vectordb`, `rag_api`, plus the Mongo container from step 5.2. Container names are unprefixed on this stack. `docker compose` prints harmless `UID`/`GID` warnings on Windows.
 
-If the page is blank after the first build, regenerate `branding/index.html` (section 9).
+If the page looks stale after a build, hard-refresh with Ctrl+F5 (section 9).
 
 ### 5.6 Start the Python services
 
-Use a separate PowerShell window per service, each started from its own folder, in this order. All three folders contain a `main.py`, so starting from the wrong folder runs the wrong service.
+On the pilot machine these run as NSSM-managed Windows services (Automatic start, auto-restart, run as `.\AI`), all bound to `127.0.0.1`. They run from the prod repo and are shared by prod and dev.
+
+| Service | Port | Notes |
+|---|---|---|
+| `clarisync-gateway` | 8000 | FastAPI gateway; depends on docling |
+| `clarisync-docling` | 8001 | Document conversion (CPU) |
+| `clarisync-ocr` | 8002 | Mistral-OCR-compatible adapter; depends on docling |
+| `clarisync-gpulog` | - | `nvidia-smi` sample every 30 s to `logs\gpu_metrics.csv` |
+
+After any gateway, Docling or OCR code change, from an elevated PowerShell:
 
 ```powershell
-# Window 1: Docling. Wait for "[docling] models warmed".
-cd <repo>\docling_service
-..\.venv\Scripts\Activate.ps1
-uvicorn main:app --host 127.0.0.1 --port 8001
-
-# Window 2: OCR adapter
-cd <repo>\ocr_adapter
-..\.venv\Scripts\Activate.ps1
-uvicorn main:app --host 0.0.0.0 --port 8002
-
-# Window 3: gateway
-cd <repo>\gateway
-..\.venv\Scripts\Activate.ps1
-uvicorn main:app --host 0.0.0.0 --port 8000
+Restart-Service clarisync-gateway
+Restart-Service clarisync-docling -Force   # -Force: it has dependents
+Restart-Service clarisync-ocr
 ```
 
-The gateway and OCR adapter bind `0.0.0.0` because the LibreChat container reaches them as `host.docker.internal`. See section 12 before exposing the machine to a wider network.
+Logs are in `logs\<service>.log`, rotated at 10 MB.
+
+To debug by hand, stop the service first (a manual `uvicorn` on a port already in use fails with error 10048), then run from the service's own folder (all three contain a `main.py`):
+
+```powershell
+cd <repo>\gateway
+..\.venv\Scripts\Activate.ps1
+uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Use port 8001 (`docling_service`) and 8002 (`ocr_adapter`) for the others, and `Start-Service` when done. Do heavy dev testing outside pilot hours; prod shares the gateway and the single GPU.
 
 ### 5.7 Health checks
 
@@ -300,11 +316,16 @@ Invoke-RestMethod http://127.0.0.1:8000/health   # status ok, ollama_reachable T
 
 ### 5.8 First login
 
-1. Open `http://localhost:3080`.
-2. Register an account. The first account registered on a fresh database becomes the administrator.
+1. Create the break-glass admin inside the LibreChat container. The first user on a fresh database gets role ADMIN:
+
+   ```powershell
+   docker exec -it LibreChat npm run create-user
+   ```
+
+2. Normal users open the app and click **Login with Microsoft** (section 11). Local email login is off; the break-glass account logs in through the API (`ALLOW_EMAIL_LOGIN_OVERRIDE`) and to the admin panel.
 3. Send a test message. The first request loads the model and takes a few seconds.
 4. Attach a PDF and an image to confirm the document and vision paths.
-5. The admin panel is at `http://localhost:3000`.
+5. Admin panel: `http://127.0.0.1:3001`. It authenticates against this stack's user DB and requires the ADMIN role. To change the break-glass password: `npm run reset-password` inside the container.
 
 ---
 
@@ -312,13 +333,18 @@ Invoke-RestMethod http://127.0.0.1:8000/health   # status ok, ollama_reachable T
 
 | Port | Service | Bind | Notes |
 |---|---|---|---|
-| 3080 | LibreChat | all interfaces (Docker) | User-facing |
-| 3000 | Admin panel | all interfaces (Docker) | Roles and permissions |
-| 8000 | Gateway | `0.0.0.0` | No authentication |
+| 3080 | Prod LibreChat | all interfaces (Docker) | User-facing; the only externally reachable listener |
+| 3081 | Dev LibreChat | `127.0.0.1` | |
+| 3000 | Prod admin panel | `127.0.0.1` | Roles and permissions |
+| 3001 | Dev admin panel | `127.0.0.1` | |
+| 8000 | Gateway | `127.0.0.1` | No authentication; shared by prod and dev |
 | 8001 | Docling service | `127.0.0.1` | No authentication. Never expose. |
-| 8002 | OCR adapter | `0.0.0.0` | Static bearer key only |
-| 11434 | Ollama | localhost | Native Windows application |
-| 27017 | `clarisync-mongo` | all interfaces (Docker) | Authenticated, but reachable from the network |
+| 8002 | OCR adapter | `127.0.0.1` | Static bearer key only |
+| 11434 | Ollama | `127.0.0.1` | Native Windows application |
+| 27018 | `clarisync-mongo-prod` | `127.0.0.1` | Authenticated |
+| 27017 | `clarisync-mongo` (dev) | `127.0.0.1` | Authenticated |
+
+The containers reach the gateway and OCR adapter through `host.docker.internal`.
 
 ---
 
@@ -326,10 +352,11 @@ Invoke-RestMethod http://127.0.0.1:8000/health   # status ok, ollama_reachable T
 
 | File | Purpose |
 |---|---|
-| `LibreChat/.env` | Secrets and switches. Untracked. Template: `.env.example`. |
+| `LibreChat/.env` | Secrets and switches. Untracked. Template: `.env.example`. Changes need `docker compose up -d --force-recreate api`. |
 | `LibreChat/librechat.yaml` | Endpoint, model spec, hidden UI features, OCR, file routing, registration. Bind-mounted; `docker compose restart api` applies changes. |
-| `LibreChat/docker-compose.override.yaml` | Local image build, `MONGO_URI` passthrough, branding mounts, `vectordb` credentials. |
-| `LibreChat/branding/` | `clarisync-theme.css`, `logo.svg`, favicons, `index.html`, `fonts/`. |
+| `LibreChat/docker-compose.override.yaml` | Local image build (`${LIBRECHAT_IMAGE:-librechat}`), `MONGO_URI` passthrough, the `librechat.yaml` mount, `vectordb` credentials. |
+| `LibreChat/client/index.html`, `client/public/assets/` | Branding source (theme CSS, logos, favicons, fonts). Baked into the build; changes need a rebuild. |
+| `LibreChat/branding/` | Reference copy only. Not read by the build. |
 | `gateway/model_registry.py` | The only place models are defined: Ollama tag, context size, whether loaded at startup. |
 | `modelfiles/quick/*/Modelfile` | System prompt, sampling parameters and `num_ctx` per model. These values are load-bearing because the gateway does not send them per request. |
 
@@ -337,7 +364,8 @@ Invoke-RestMethod http://127.0.0.1:8000/health   # status ok, ollama_reachable T
 
 - `endpoints.custom`: one endpoint, "Clarisync Gateway", `baseURL: http://host.docker.internal:8000/v1`, model `quick-text`.
 - `modelSpecs`: one spec, "Quick", with `enforce: true`, which hides the raw endpoint and model selector.
-- `interface`: developer features hidden (agents, prompts, memories, web search, code runner, MCP, sharing, bookmarks). `feedback` stays on because the pilot metrics depend on thumbs up/down.
+- `interface`: developer features hidden (agents, prompts, memories, web search, code runner, MCP, bookmarks, multi-conversation). `feedback` stays on because the pilot metrics depend on thumbs up/down. Shared links are not switched off (`sharedLinks` is commented out); a shared link still requires login.
+- `modelSpecs[].preset.promptPrefix` is sent as a system message and replaces the Modelfile `SYSTEM` text on the pilot path. Modelfile parameters and the model tag still apply. Keep `promptPrefix` and `modelfiles/quick/qwen3-8b/Modelfile` in sync.
 - `ocr` and `fileConfig`: send DOCX, XLSX and PPTX through the OCR adapter and mark PPTX as a text-delivery type.
 - `registration.socialLogins`: providers offered on the login page.
 
@@ -360,118 +388,127 @@ Invoke-RestMethod http://127.0.0.1:8000/health   # status ok, ollama_reachable T
 
 | File | Change |
 |---|---|
-| `docker-compose.yml` | Bundled `mongodb` service and its `depends_on` entry removed (Compose override files cannot remove a service). Re-apply if the file is replaced. |
-| `docker-compose.override.yaml` | `api` built locally (`image: librechat`, `build.target: node`), `MONGO_URI` from `.env`, branding bind mounts, `vectordb` credentials from `.env`. |
+| `docker-compose.yml` | Bundled `mongodb` service and its `depends_on` entry removed (Compose override files cannot remove a service). Container names use `${CONTAINER_PREFIX:-}` so prod and dev can coexist. Re-apply if the file is replaced. |
+| `docker-compose.override.yaml` | `api` built locally (`image: ${LIBRECHAT_IMAGE:-librechat}`, `build.target: node`), `MONGO_URI` from `.env`, `librechat.yaml` mount only, `vectordb` credentials from `.env`. |
 | `api/server/controllers/agents/client.js` | `getUserFacingRequestError` returns the bare message and strips a leading HTTP status code. |
 | `client/src/components/Messages/Content/Error.tsx` | Error text shown without the "Something went wrong" wrapper; leading status code stripped. |
 | `client/src/components/UnifiedSidebar/ConversationsSection.tsx` | Logo and wordmark row, labelled "New chat" button, persistent light/dark toggle. |
 | `client/src/components/Auth/AuthLayout.tsx` | Login logo moved into the centred block above the heading. |
+| `client/src/components/Chat/Messages/HoverButtons.tsx` | Edit button hidden on assistant messages (`isCreatedByUser` added to its condition). UI only; the API route still accepts edits. |
+| `client/src/data-provider/mutations.ts` | Removed the ungated `useConversationTagsQuery()` call from `useTagConversationMutation` (now invalidates the `conversationTags` query). Fixes the `[BOOKMARKS] Forbidden /api/tags` noise for USER-role accounts. |
+| `api/strategies/samlStrategy.js` | `user.id = user._id.toString()` added in `createSamlCallback`. Fixes the `checkBan` error "key.startsWith is not a function". |
+| `client/index.html`, `client/public/assets/` | Clarisync branding: title, meta, loading colours, theme CSS link, logos, favicons, fonts. Diverges from upstream; expect a merge conflict on upgrade. |
 | `client/src/locales/en/translation.json` | "Projects" displayed as "Folders" (32 values; keys unchanged). |
 | `librechat.yaml` | Full Clarisync configuration (section 7). |
 
-Sign-in changes are configuration only (`.env`, `librechat.yaml`, optionally the override file). They need no source patch.
+Sign-in is configured through `.env`. The one source patch it needs is `api/strategies/samlStrategy.js` (above).
 
 ---
 
 ## 9. Rebuilding and branding
 
-**No rebuild needed** for: `.env` or `librechat.yaml` changes (`docker compose restart api`, wait about 20 seconds), CSS variables, fonts, logo, favicons.
+Branding is baked into the client build. The old `branding/index.html` bind mount and its hashed-filename regeneration step are retired. `LibreChat/branding/` is a reference copy only (its `index.html` is stale and unused). The build reads `client/index.html` and `client/public/assets/` (`clarisync-theme.css`, favicons, apple-touch icon, `logo-mark.svg`, `logo.svg` (a copy of `logo-mark.svg`), `fonts/`), so branding edits go there, followed by a rebuild.
 
-**Rebuild needed** for anything under `LibreChat/client/src` or `LibreChat/api`:
+Run these from the `LibreChat` folder of the repo you changed:
 
-```powershell
-cd <repo>\LibreChat
-docker compose build api
-docker compose up -d
-```
+| Change | Command |
+|---|---|
+| `librechat.yaml` | `docker compose restart api` (wait about 20 seconds) |
+| `.env`, or a new/changed volume mount | `docker compose up -d --force-recreate api` |
+| `client/src`, `client/index.html`, `client/public/assets`, `api/strategies/samlStrategy.js` | `docker compose build api`, then `docker compose up -d` |
+| Gateway, Docling, OCR adapter | `Restart-Service` (shared by prod and dev; section 5.6) |
 
-**`branding/index.html` must be regenerated after every rebuild.** It is bind-mounted over the built `index.html` and hardcodes Vite's hashed asset filenames, which change when the source changes. A stale file gives a blank page.
+After a build, check `docker images` to confirm the new image id, then press Ctrl+F5 in the browser. LibreChat's service worker can serve the previous build. If the page is blank or requests 404 on an old hashed file, open DevTools, Application, Service Workers, Unregister, then Storage, Clear site data. This also logs the user out and resets the saved theme.
 
-1. Copy the freshly built file out of an image container (not the running container, whose `index.html` is the mounted copy):
-
-   ```powershell
-   docker create --name idx librechat
-   docker cp idx:/app/client/dist/index.html <repo>\LibreChat\branding\index.html
-   docker rm idx
-   ```
-
-2. Re-apply these six edits to `branding/index.html`:
-   - `theme-color` meta: `#F7F8F8`
-   - description meta: Clarisync-specific text
-   - `<title>`: `Clarisync Assistant`
-   - loading-screen background colours: normal dark `#0d0d0d` to `#0F1618`, normal light `#ffffff` to `#F7F8F8` (leave the high-contrast branches untouched)
-   - add `<link rel="stylesheet" href="./assets/clarisync-theme.css">` after the app's own stylesheet link
-
-3. `docker compose up -d` (not `restart`, because a mount changed).
-
-**Browser side after a rebuild:** LibreChat's service worker can serve the previous build. If the page is blank or requests 404 on an old hashed file, open DevTools, Application, Service Workers, Unregister, then Storage, Clear site data. This also logs the user out and resets the saved theme.
-
-Brand colours: teal `#1F4756`, page background `#F7F8F8`, text `#14262C`. Poppins is the intended heading font. The `.woff2` files are not in `branding/fonts/`.
+Brand colours: teal `#1F4756`, page background `#F7F8F8`, text `#14262C`. Poppins is the intended heading font.
 
 ---
 
 ## 10. Daily operation
 
-**Start order**
+| | Prod (pilot) | Dev |
+|---|---|---|
+| Repo | `self-hosted-llm` | `selfhostedllmproject` |
+| LibreChat / admin panel | 3080 / 3000 | 3081 / 3001 |
+| Containers | `prod-` prefix | original names |
+| MongoDB | `clarisync-mongo-prod` (27018, `--auth`) | `clarisync-mongo` (27017) |
+| Image | `librechat-prod` | `librechat` |
+| `LOGIN_MAX` | 7 | 20 |
 
-1. Docker Desktop (wait for the engine).
-2. Ollama (tray application).
-3. `docker start clarisync-mongo` (it restarts by itself after a Docker restart).
-4. `cd LibreChat; docker compose up -d`
-5. Docling, then OCR adapter, then gateway (section 5.6).
-6. Health checks (section 5.7).
+Both stacks share the native services (gateway, Docling, OCR adapter, Ollama) and the single GPU. They also share `localhost` cookies across ports, so use separate browser profiles.
 
-**Stop:** Ctrl+C in each service window, `docker compose down`, `docker stop clarisync-mongo`.
+**After a machine restart.** Docker Desktop and Ollama start when `AI` signs in, not at boot, and auto-login is off. RDP in as `AI`. The containers use `restart: always` (Mongo uses `unless-stopped`) and come back on their own; the NSSM services start automatically. **Always disconnect the RDP session; never sign out of `AI`.**
+
+**Maintenance stop:** `docker compose down` in each stack, `Stop-Service` for the clarisync services (elevated; Docling needs `-Force`).
 
 **Rules**
 
-- Restart the gateway after any code change (uvicorn runs without `--reload`).
+- Restart the affected service after any gateway, Docling or OCR change (section 5.6).
 - After restarting Docling, the first conversion of each file is slow again, because its cache is in memory.
-- Restart `api` after any `librechat.yaml` change.
+- Restart rules for LibreChat are in section 9.
 
-**Useful commands**
+**Useful commands** (run from the prod repo unless noted)
 
 ```powershell
-Get-Content gateway\gateway_metrics.jsonl -Tail 6            # recent request timings
-docker logs LibreChat --tail 120                              # LibreChat log (timestamps are UTC)
+Get-Service clarisync-*
+docker ps
+Get-Content gateway\gateway_metrics.jsonl -Tail 6             # recent request timings
+Get-Content logs\gpu_metrics.csv -Tail 5                       # GPU samples
+docker logs LibreChat --tail 120                          # this stack's log (timestamps are UTC)
 docker logs LibreChat --since 3h 2>&1 | Select-String "ocr|error"
 docker logs rag_api --since 3h
+ollama ps
 ```
 
-To confirm the OCR adapter handled an Office file, look for an `[ocr] upload ...` line in the adapter window. If the adapter is down, LibreChat silently falls back to its own parser for DOCX and XLSX.
-
----
+To confirm the OCR adapter handled an Office file, look for an `[ocr] upload ...` line in `logs\clarisync-ocr.log`. If the adapter is down, LibreChat silently falls back to its own parser for DOCX and XLSX.
 
 ## 11. Sign-in (SAML)
 
 Sign-in is handled entirely by LibreChat's built-in SAML support against Microsoft Entra ID. The gateway, Docling service and OCR adapter are not involved and never see who is logged in. The protocol is SAML, not OIDC.
 
-Full instructions, the file map and the test plan are in `SSO_INTEGRATION.md`, supplied separately by the maintainers.
+**Architecture.** This deployment has no SSO broker in front of it, unlike Clarisync's other (Laravel/Angular) products, which sit behind an internal broker service on port 8000. LibreChat talks to Entra directly — it is both the relying-party app and the thing that constructs and validates the SAML flow. The port 8000 gateway in this stack is the unrelated FastAPI request router described in section 2; it has no role in authentication.
+
+**Current state.** SAML login works on both stacks (prod on `localhost:3080`, dev on `localhost:3081`), verified with real Clarisync accounts. `SAML_IDP_ISSUER` is set to Entra's tenant STS issuer and tampered assertions are rejected. The signing certificate is valid until October 2028. Anyone within Clarisync may sign in: no security group or "Assignment required" is used.
+
+**Verified behaviour**
+
+- A new Entra user is auto-created as provider `saml`, role USER (`ALLOW_SOCIAL_REGISTRATION=false` does not block first-time SAML users).
+- An existing local account with the same email is refused ("SAML login conflicts with existing provider: local"; no merge). Keep local accounts to the break-glass admin only.
+- Logout works.
+- The login page shows only "Login with Microsoft" (`SAML_BUTTON_LABEL`, `SAML_IMAGE_URL`).
+- Seamless SSO re-logs in with the device's Entra account and shows no account picker. `forceAuthn` exists in passport-saml but is not exposed in this fork. To test as another user, use a separate Windows profile, another machine, or a `netsh portproxy` from the tester's laptop (`127.0.0.1:3080` to `192.168.90.22:3080`; remove afterwards).
+
+**Entra rule: Identifier and Reply URL edits must append, never replace.** Replacing the `localhost:3080` entry with 3081 broke prod login (AADSTS700016) until it was re-added. Keep `http://localhost:3080`, `http://localhost:3081` and add the `https://192.168.90.22` entries alongside. Entra rejects `http://` Reply URLs other than localhost, so pointing `.env` at the LAN IP over plain HTTP does not work.
+
+**Move to HTTPS (pending).** Once HTTPS is up on `192.168.90.22` and the Entra entries are appended (Identifier `https://192.168.90.22`, Reply URL `https://192.168.90.22/oauth/saml/callback`), set these in the prod `.env`: `DOMAIN_CLIENT`, `DOMAIN_SERVER`, `SAML_ISSUER` and `SAML_CALLBACK_URL` to the HTTPS address, plus `SESSION_COOKIE_SECURE=true`. Then run `docker compose up -d --force-recreate api`. The TLS proxy must pass `X-Forwarded-For`. Be careful with HSTS on a self-signed certificate. Dev stays on `localhost:3081`.
 
 ---
 
 ## 12. Security notes
 
 - **Secrets** live in `LibreChat/.env` only. It is ignored by git. Never commit `.env`, certificates, `gateway/gateway_dump/` or `gateway/gateway_metrics.jsonl`.
-- **Network exposure (open item).** The gateway (8000), OCR adapter (8002) and MongoDB (27017) are reachable from the corporate network on the pilot machine. The gateway has no authentication. The OCR adapter accepts a static key. A Windows firewall rule scoped to the Python executable did not block LAN access in testing. Fix before real users are on the machine, for example by publishing Mongo's port on the internal Docker interface only and restricting 8000 and 8002 to the Docker subnet.
+- **Network exposure.** Only LibreChat on 3080 listens on all interfaces. The gateway, Docling, OCR adapter, Ollama, both MongoDB instances and both admin panels are bound to `127.0.0.1`. Still open: RDP (3389), AnyDesk (7070) and Zabbix (10050) have inbound allow rules on all profiles, and SMB/RPC/NetBIOS listen beyond localhost. Scoping them needs the office IP ranges. Go-live needs confirmation that only 443 to LibreChat is exposed externally.
+- **HTTPS.** Not yet in place; until it is, the app is served over plain HTTP and reachable on the LAN only (section 11).
+- **Local login** is off except the break-glass admin (`ALLOW_EMAIL_LOGIN_OVERRIDE`, logged). Registration is off.
+- **Shared links** are not disabled; a shared link still requires login.
 - **Docling** has no authentication and must stay on `127.0.0.1`.
 - **Development defaults to replace before wider use:** `ocr.apiKey` in `librechat.yaml` and `OCR_ADAPTER_API_KEY` (`clarisync-ocr-local`). LibreChat prints the resolved `ocr:` block, including the key, in its startup log.
 - **Document text in memory:** the Docling cache holds up to 32 converted documents and the OCR adapter up to 50 uploads (15-minute expiry) until restart.
 - **Deletion:** deleting a conversation in LibreChat hard-deletes it and its messages from MongoDB.
 - **Licensing:** MongoDB is used internally and not offered as a service, which is within the SSPL exemption.
-- **User roles:** new-account role assignment after the first administrator is not verified on this build. Check it before go-live.
 
 ---
 
 ## 13. Known issues and limitations
 
-- **Stale oversize-PDF message.** After one "has N pages" rejection in a conversation, later oversize PDFs in the same conversation can show the first file's message, whatever their real page count.
 - **Streaming is simulated.** The user sees the answer arrive in one piece.
 - **Single card, single resident model.** Image requests pay a model-swap delay of several seconds.
 - **Unsupported file types.** LibreChat gives some types no delivery path (archives, other presentation formats) and drops them without an error. The model may then invent an answer.
 - **Office files** have no gateway page limit. Only the size guard applies.
 - **Unknown company terms.** The model can invent answers about Clarisync-specific terms. Phase 2 retrieval is the intended fix.
-- **Font files, welcome text and footer text** are not supplied.
+- **Dev credential-fingerprint mismatch.** Dev's LibreChat logs a mismatch (`CREDS_KEY`/`CREDS_IV`/JWT secrets vs the DB record) on every start. Do not overwrite the DB marker. Prod is unaffected.
+- **Seamless SSO.** The device's Entra account is reused with no picker (section 11).
+- **Restart gap.** After a machine restart Docker and Ollama stay down until someone RDPs in as `AI` (section 10).
 - **`wslrelay` phantom listener.** After `wsl --shutdown` or a rebuild, a second process can hold port 3080 on `[::1]` and serve stale content (section 14).
 - **Two databases.** Postgres/pgvector runs alongside MongoDB for LibreChat's native file-upload feature. MongoDB is the planned single database.
 - **Gateway and LiteLLM.** The custom gateway is the interim routing layer. LiteLLM returns if a second serving backend is added.
@@ -484,12 +521,15 @@ Full instructions, the file map and the test plan are in `SSO_INTEGRATION.md`, s
 |---|---|
 | "The selected model is unavailable from this provider" | A different service is answering on port 8000 (started from the wrong folder). Restart the gateway from `gateway\`. |
 | OCR adapter logs `Docling rejected ... 404` | The Docling port is answered by the gateway. Restart each service from its own folder on its own port. |
-| Blank page after a rebuild | Stale `branding/index.html` or service worker (section 9). |
-| `localhost:3080` shows old content, `docker ps` looks correct | `netstat -ano \| findstr :3080`. If a `[::1]` listener belongs to `wslrelay.exe`, run `Stop-Process -Id <pid> -Force`. |
-| LibreChat crash-loops with `ECONNREFUSED` to Mongo | `clarisync-mongo` is stopped. `docker start clarisync-mongo`. |
+| Blank page or old UI after a rebuild | Stale service worker: Ctrl+F5, then unregister it (section 9). |
+| `localhost:3081` shows old content, `docker ps` looks correct | `netstat -ano \| findstr :3081`. If a `[::1]` listener belongs to `wslrelay.exe`, run `Stop-Process -Id <pid> -Force`. |
+| LibreChat crash-loops with `ECONNREFUSED` to Mongo | This stack's Mongo container is stopped. `docker start clarisync-mongo`. |
 | DOCX answers work but no `[ocr]` line appears | The adapter is down and LibreChat used its own parser. |
-| Config change has no effect | `librechat.yaml` and `.env` need `docker compose restart api`. Compose file changes need `docker compose up -d`. Source changes need `docker compose build api`. |
+| Config change has no effect | `librechat.yaml`: `docker compose restart api`. `.env` or compose/mount changes: `docker compose up -d --force-recreate api`. Source or branding changes: `docker compose build api` then `up -d`. |
 | Edited file shows old content | Read it back from disk (`Select-String -Path <file> -Pattern "<new text>"`). Editors can display a save that did not persist. |
+| "Too many login attempts" on SAML login | LibreChat's local-login rate limiter (`LOGIN_MAX`/`LOGIN_WINDOW`) firing on the SAML route. Raise `LOGIN_MAX`, then force-recreate `api`. |
+| AADSTS700016 "Application with identifier ... was not found" | The Entra Identifier for that origin is missing (an edit replaced it instead of appending). Ask the Entra admin to re-add it (section 11). |
+| AADSTS7500511 | `SAML_CALLBACK_URL` is relative. Use the absolute URL. |
 
 ---
 
@@ -500,3 +540,10 @@ Full instructions, the file map and the test plan are in `SSO_INTEGRATION.md`, s
 - Check a running stack with the health calls in section 5.7 and by attaching one file of each type.
 
 ---
+
+## 16. Maintainers
+
+| Name | Email |
+|---|---|
+| Ryef Taimur | taimur.nawaz@clarisync.com |
+| Ibrahim Murtaza | ibrahim.murtaza@clarisync.com |

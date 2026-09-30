@@ -3,11 +3,11 @@ FastAPI gateway -- OpenAI-compatible /v1/chat/completions endpoint that
 LibreChat calls instead of hitting Ollama directly.
 
 Scope:
-- Streaming (stream:true) is supported via simulated SSE: the full
-  response is generated normally (blocking), then sent back as a single
-  delta chunk plus a finish chunk -- satisfies clients requiring an SSE
-  shape without real token-by-token generation, which would require
-  rewriting ollama_client.py to consume Ollama's own stream.
+- Streaming (stream:true): text requests stream token by token from Ollama
+  (ollama_client.stream_model, one SSE chunk per piece). Image requests
+  still use simulated SSE: the full response is generated (blocking), then
+  sent as a single delta chunk plus a finish chunk. Stopping a stream closes
+  the connection to Ollama, which stops generation.
 - Swap orchestration: explicitly unloads any other resident Quick model
   before loading a new one (deterministic, not relying on Ollama's
   idle-timeout auto-eviction -- see handoff note on why).
@@ -187,6 +187,7 @@ from ollama_client import (
     OllamaUnavailableError,
     call_model,
     get_loaded_models,
+    stream_model,
     unload_model,
 )
 from pydantic import BaseModel
@@ -571,9 +572,101 @@ def _reply_response(
     }
 
 
+def _stream_text_response(
+    model, messages, swap_info, request_start, has_image, prompt_chars, extra
+):
+    """Real streaming for text requests: each piece Ollama generates goes to
+    LibreChat as its own SSE chunk. Image requests still use the simulated
+    path in _stream_response."""
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+
+    def chunk(delta: dict, finish: str | None = None) -> str:
+        return _sse_chunk(
+            {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model.ollama_tag,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+            }
+        )
+
+    sent_role = False
+    started = False
+    first_token_ms = None
+    final = None
+    try:
+        for kind, value in stream_model(model, messages):
+            if kind == "delta":
+                if not started:
+                    value = value.lstrip()  # models often begin with blank lines
+                    if not value:
+                        continue
+                    started = True
+                    first_token_ms = round((time.monotonic() - request_start) * 1000, 1)
+                delta = {"content": value}
+                if not sent_role:
+                    delta["role"] = "assistant"
+                    sent_role = True
+                yield chunk(delta)
+            else:
+                final = value
+    except OllamaUnavailableError as e:
+        # Already streaming, so the error goes out as text at the end of the
+        # answer instead of an HTTP status.
+        err = _ollama_down(e)
+        _log_metrics(
+            {
+                "event": "gateway_reply",
+                "reason": err.reason,
+                "detail": err.detail[:300],
+                "message": str(err),
+                "gateway_total_ms": round((time.monotonic() - request_start) * 1000, 1),
+                "stream": True,
+                "ttft_ms": first_token_ms,
+                **extra,
+            }
+        )
+        delta = {"content": ("\n\n" if started else "") + OLLAMA_DOWN_MESSAGE}
+        if not sent_role:
+            delta["role"] = "assistant"
+        yield chunk(delta, "stop")
+        yield "data: [DONE]\n\n"
+        return
+
+    final = final or {}
+    _log_metrics(
+        {
+            "model": model.ollama_tag,
+            "has_image": has_image,
+            "swap_action": swap_info["action"],
+            "unload_ms": swap_info["unload_ms"],
+            "ollama_load_ms": round(final.get("load_duration", 0) / 1_000_000, 1),
+            "ollama_total_ms": round(final.get("total_duration", 0) / 1_000_000, 1),
+            "gateway_total_ms": round((time.monotonic() - request_start) * 1000, 1),
+            "prompt_chars": prompt_chars,
+            "prompt_tokens": final.get("prompt_eval_count"),
+            "output_tokens": final.get("eval_count"),
+            "ttft_ms": first_token_ms,
+            "stream": True,
+            **extra,
+        }
+    )
+    if not sent_role:  # empty answer: still send a well-formed assistant message
+        yield chunk({"role": "assistant", "content": ""})
+    yield chunk({}, "stop")
+    yield "data: [DONE]\n\n"
+
+
 def _stream_response(
     model, messages, images, swap_info, request_start, has_image, prompt_chars, extra
 ):
+    if not images:
+        yield from _stream_text_response(
+            model, messages, swap_info, request_start, has_image, prompt_chars, extra
+        )
+        return
     try:
         result = call_model(model, messages, images=images or None)
     except OllamaUnavailableError as e:
