@@ -101,9 +101,9 @@ Search index:  chat-meilisearch
 - Every request appends a line to `gateway/gateway_metrics.jsonl` (swap type, Ollama's own load and total durations, document timings). Streamed text requests also log `ttft_ms` (time to first token, including any document wait) and `output_tokens`. LibreChat's automatic title-generation requests appear as `stream: false` rows; exclude them when analysing chat latency.
 - `GET /health` reports Ollama and Docling reachability.
 
-**Docling service** (`docling_service/`): CPU only, warm-started, in-memory cache keyed by file hash (32 documents), one conversion at a time, 25 MB and 30 page limits. Bound to `127.0.0.1` because it has no authentication.
+**Docling service** (`docling_service/`): CPU only, warm-started, in-memory cache keyed by file hash (32 documents), one conversion at a time, 25 MB and 30 page limits. Bound to `127.0.0.1` because it has no authentication. For `.pptx` files it also appends what Docling's PowerPoint reader leaves out: speaker notes, and text found in pictures (read with RapidOCR, the OCR engine installed with Docling). Pictures under 120 px, repeated pictures and any beyond the first 10 are skipped. The notes and picture text come at the end of the extracted text, labelled by slide number.
 
-**OCR adapter** (`ocr_adapter/`): imitates the small part of the Mistral OCR API that LibreChat's built-in `ocr:` feature calls, and forwards the work to Docling. Nothing leaves the machine.
+**OCR adapter** (`ocr_adapter/`): imitates the small part of the Mistral OCR API that LibreChat's built-in `ocr:` feature calls, and forwards the work to Docling. Nothing leaves the machine. It logs one line per file (`[ocr] 'name': N chars in X ms`, or `(cached)`). That log is the only place Office-file conversion times are recorded; `gateway_metrics.jsonl` covers PDFs only.
 
 **Which path handles which file**
 
@@ -112,7 +112,7 @@ Search index:  chat-meilisearch
 | Text | LibreChat to gateway to Ollama |
 | Image | LibreChat to gateway, routed to the vision model |
 | PDF | LibreChat sends a file part to the gateway, gateway calls Docling |
-| DOCX, XLSX, PPTX | LibreChat `ocr:` route to the OCR adapter to Docling; the extracted text goes into the prompt |
+| DOCX, XLSX, PPTX | LibreChat `ocr:` route to the OCR adapter to Docling; the extracted text goes into the prompt. For PPTX, speaker notes and picture text are added at the end. Text inside pictures in DOCX and XLSX files has not been tested. |
 | Other types | Untested. LibreChat may handle or ignore them (section 13) |
 
 ---
@@ -398,7 +398,7 @@ The containers reach the gateway and OCR adapter through `host.docker.internal`.
 
 **OCR adapter environment variables:** `DOCLING_URL` (default `http://127.0.0.1:8001`), `OCR_ADAPTER_API_KEY` (default `clarisync-ocr-local`, must equal `ocr.apiKey` in `librechat.yaml`), `CONVERT_TIMEOUT_S` (default 300).
 
-**Limits in code:** Ollama request timeout 180 s (`gateway/ollama_client.py`), Docling conversion timeout 300 s, 30 pages and 25 MB per document (`docling_service/main.py`).
+**Limits in code:** Ollama request timeout 180 s (`gateway/ollama_client.py`), Docling conversion timeout 300 s, 30 pages and 25 MB per document, and for PowerPoint files at most 10 pictures read (`MAX_PICTURES`) with pictures under 120 px skipped (`MIN_PICTURE_PX`) (all in `docling_service/main.py`).
 
 ---
 
@@ -558,7 +558,7 @@ Sign-in is handled entirely by LibreChat's built-in SAML support against Microso
 ## 15. Testing
 
 - `testing/model_results/`: text and vision test runners (`test_runner.py`, `vision_test_runner.py`) and stored results from the six-model comparison that selected `qwen3-8b`.
-- `testing/docling/`: document test tools, including `compare_pptx.py` and the test PPTX generator.
+- `testing/docling/`: document test tools, including `compare_pptx.py` and the test PPTX generator (`make_test_pptx.py`: 14 known facts, including a picture with text and speaker notes). `pptx_extras_test.py` and `ocr_direct_test.py` are the experiments that chose the approach for reading PowerPoint notes and pictures.
 - Check a running stack with the health calls in section 5.7 and by attaching one file of each type.
 
 ---
@@ -569,3 +569,5 @@ Sign-in is handled entirely by LibreChat's built-in SAML support against Microso
 |---|---|
 | Ryef Taimur | taimur.nawaz@clarisync.com |
 | Ibrahim Murtaza | ibrahim.murtaza@clarisync.com |
+
+give the new readmes
