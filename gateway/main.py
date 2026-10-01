@@ -182,6 +182,7 @@ from docling_client import (
 )
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from model_registry import MODEL_REGISTRY, ModelEntry
 from ollama_client import (
     OllamaUnavailableError,
@@ -634,6 +635,23 @@ def _stream_text_response(
         yield chunk(delta, "stop")
         yield "data: [DONE]\n\n"
         return
+    except GeneratorExit:
+        # Client closed the connection (Stop button). The answer was cut short,
+        # so log it, otherwise cancelled requests leave no row at all.
+        _log_metrics(
+            {
+                "event": "client_cancelled",
+                "model": model.ollama_tag,
+                "has_image": has_image,
+                "swap_action": swap_info["action"],
+                "prompt_chars": prompt_chars,
+                "gateway_total_ms": round((time.monotonic() - request_start) * 1000, 1),
+                "stream": True,
+                "ttft_ms": first_token_ms,
+                **extra,
+            }
+        )
+        raise
 
     final = final or {}
     _log_metrics(
@@ -657,6 +675,42 @@ def _stream_text_response(
         yield chunk({"role": "assistant", "content": ""})
     yield chunk({}, "stop")
     yield "data: [DONE]\n\n"
+
+
+_STREAM_END = object()
+
+
+async def _closing_stream(sync_gen):
+    """
+    Drive a sync generator from async code and ALWAYS close it when we stop.
+
+    Starlette does not close the body iterator when the client disconnects, so
+    an abandoned sync generator lived until garbage collection and Ollama kept
+    generating. Here, closing the wrapper closes the generator, which exits the
+    `with requests.post(...)` block in stream_model and drops the Ollama
+    connection (GPU stops).
+    """
+    try:
+        while True:
+            chunk = await run_in_threadpool(next, sync_gen, _STREAM_END)
+            if chunk is _STREAM_END:
+                break
+            yield chunk
+    finally:
+        try:
+            sync_gen.close()
+        except ValueError:  # still executing in a worker thread; it ends on its own
+            pass
+
+
+class _ClosingStreamingResponse(StreamingResponse):
+    """StreamingResponse that closes its body iterator however streaming ends."""
+
+    async def stream_response(self, send):
+        try:
+            await super().stream_response(send)
+        finally:
+            await self.body_iterator.aclose()
 
 
 def _stream_response(
@@ -806,16 +860,18 @@ def chat_completions(req: ChatCompletionRequest):
         )
 
     if req.stream:
-        return StreamingResponse(
-            _stream_response(
-                model,
-                messages,
-                images,
-                swap_info,
-                request_start,
-                has_image,
-                prompt_chars,
-                extra,
+        return _ClosingStreamingResponse(
+            _closing_stream(
+                _stream_response(
+                    model,
+                    messages,
+                    images,
+                    swap_info,
+                    request_start,
+                    has_image,
+                    prompt_chars,
+                    extra,
+                )
             ),
             media_type="text/event-stream",
         )

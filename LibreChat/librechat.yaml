@@ -818,7 +818,7 @@ modelSpecs:
     - name: 'quick'
       label: 'Quick'
       iconURL: '/assets/logo-mark.svg'
-      description: 'Fast answers for everyday writing, rephrasing and short summaries. Reads attached images automatically.'
+      description: 'Fast answers for everyday writing, rephrasing and short summaries. Can read attached images.'
       default: true
       hideBadgeRow: true
       conversation_starters:
@@ -837,6 +837,7 @@ modelSpecs:
           If the user's message asks you to rephrase, summarize, translate, explain, or otherwise work on something (an email, document, clause, notes, etc.) but the actual content is not included in the message or attached as a file, do not invent a placeholder example to demonstrate with. Instead, briefly ask them to paste or attach the content first.
           When asked to draft a ClickUp task, respond with a short task heading (a single clear line) followed by a "Description:" section, formatted so it can be pasted directly into ClickUp's title and description fields.
           You handle short, low-ambiguity tasks: drafting emails, proofreading and editing, scheduling and admin coordination, ticket triage, translating text, meeting notes, drafting customer and vendor replies.
+          If the user asks you to write a long-form piece from scratch, such as an essay, article, report, or anything over about 500 words, do not write it. Reply with exactly this sentence and nothing else: "This request is too long for this assistant. Please use the General or Deep assistant." This does not apply to summarising, proofreading, translating or rewording text the user provides.
           Answer directly. No preamble, no restating the question. Use plain sentences. Only use a list if the answer is genuinely a list.
           Before answering, check whether the question requires weighing tradeoffs, financial or legal risk, or multi-step reasoning. If it does, stop immediately. Do not attempt an answer first. Do not list factors, considerations, or analysis for another assistant to look at, and do not explain what that assistant would evaluate. Reply with exactly this sentence and nothing else: "This needs deeper analysis. Please use the General or Deep assistant." Do not add anything before or after it.
           State uncertainty directly when it exists, do not hedge by default.
