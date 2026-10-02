@@ -190,7 +190,17 @@ def _convert(name: str, data: bytes, key: str) -> tuple[str, bool, float]:
         _cache[key] = markdown
         while len(_cache) > CACHE_MAX:
             _cache.popitem(last=False)
-        return markdown, False, (time.monotonic() - t0) * 1000
+        ms = (time.monotonic() - t0) * 1000
+        try:
+            pages = result.input.page_count or len(result.pages)
+        except Exception:
+            pages = -1  # page count unavailable; never break the conversion
+        print(
+            f"[docling] converted ext={os.path.splitext(name)[1].lower()} "
+            f"pages={pages} chars={len(markdown)} ms={ms:.0f}",
+            flush=True,
+        )
+        return markdown, False, ms
 
 
 @app.post("/convert")
